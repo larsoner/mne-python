@@ -1044,7 +1044,10 @@ def _write_ica(fid, ica):
                          _explained_var=ica._explained_var
                          )
 
-    unmixing_matrix_ = ica._ica.unmixing_matrix_
+    try:
+        ica_components_ = _ica.components_
+    except:
+        ica_components_ = _ica.unmixing_matrix_
 
     start_block(fid, FIFF.FIFFB_ICA)
 
@@ -1076,16 +1079,9 @@ def _write_ica(fid, ica):
     write_string(fid, FIFF.FIFF_MNE_ICA_PARAMS, _serialize(_ica_params))
 
     #   _ICA unmixing
-    write_double_matrix(fid, FIFF.FIFF_MNE_ICA_UNMIXING, unmixing_matrix_)
+    write_double_matrix(fid, FIFF.FIFF_MNE_ICA_COMPONENTS, ica_components_)
 
-    ica_components_ = None
-    try:  # try to write new attribute.
-        ica_components_ = ica._ica.components_
-    except:
-        pass
-    if ica_components_ is not None:
-        write_double_matrix(fid, FIFF.FIFF_MNE_ICA_COMPONENTS, ica_components_)
-
+    # Done!
     end_block(fid, FIFF.FIFFB_ICA)
 
 
@@ -1134,7 +1130,7 @@ def read_ica(fname):
             _pca_params = tag.data
         elif kind == FIFF.FIFF_MNE_ICA_PCA_COMPONENTS:
             tag = read_tag(fid, pos)
-            components_ = tag.data
+            pca_components_ = tag.data
         elif kind == FIFF.FIFF_MNE_ICA_PCA_EXPLAINED_VAR:
             tag = read_tag(fid, pos)
             explained_variance_ = tag.data
@@ -1144,11 +1140,8 @@ def read_ica(fname):
         elif kind == FIFF.FIFF_MNE_ICA_PARAMS:
             tag = read_tag(fid, pos)
             _ica_params = tag.data
-        elif kind == FIFF.FIFF_MNE_ICA_UNMIXING:
-            tag = read_tag(fid, pos)
-            unmixing_matrix_ = tag.data
         elif kind == FIFF.FIFF_MNE_ICA_COMPONENTS:
-            tag = read_tag(fid,pos)
+            tag = read_tag(fid, pos)
             ica_components_ = tag.data
 
     fid.close()
@@ -1171,13 +1164,14 @@ def read_ica(fname):
 
     _ica = FastICA(**_deserialize(_ica_params))
 
-    _ica.unmixing_matrix_ = unmixing_matrix_
+    try:
     # try to set an attribute (won't work with all sklearn versions)
-    if ica_components_ is not None:
+        _ica.unmixing_matrix_ = ica_components_
+    except:
         _ica.components_ = ica_components_
 
     _pca = RandomizedPCA(**_pca_params)
-    _pca.components_ = components_
+    _pca.components_ = pca_components_
     _pca.mean_ = mean_
     _pca.explained_variance_ = explained_variance_
     _pca.explained_variance_ratio_ = explained_variance_ / \
