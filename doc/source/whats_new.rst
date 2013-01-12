@@ -13,6 +13,8 @@ Changelog
 
    - Label morphing between subjects by `Eric Larson`_
 
+   - Support for diagonal noise covariances in inverse methods and rank computation by `Eric Larson`_
+
 
 .. _changes_0_5:
 
