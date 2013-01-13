@@ -1024,7 +1024,7 @@ def _prepare_forward(forward, info, noise_cov, pca=False, verbose=None):
 
 @verbose
 def make_inverse_operator(info, forward, noise_cov, loose=0.2, depth=0.8,
-                          force_fixed=False, verbose=None):
+                          fixed=False, verbose=None):
     """Assemble inverse operator
 
     Parameters
@@ -1043,7 +1043,7 @@ def make_inverse_operator(info, forward, noise_cov, loose=0.2, depth=0.8,
         whose source coordinate system is not surface based.
     depth : None | float in [0, 1]
         Depth weighting coefficients. If None, no depth weighting is performed.
-    force_fixed : bool
+    fixed : bool
         If True, return a fixed-orientation inverse operator. If True,
         loose=None must also be used.
     verbose : bool, str, int, or None
@@ -1059,7 +1059,7 @@ def make_inverse_operator(info, forward, noise_cov, loose=0.2, depth=0.8,
     # loose=None and force_fixed=True: Make fixed
     #    depth=None, can use fixed fwd, depth=0<x<1 must use free ori
     if loose is None:
-        if not force_fixed:
+        if not fixed:
             raise ValueError('Cannot make inverse with fixed-orientation '
                              'forward solution unless force_fixed is True.')
         if not is_fixed_ori and not forward['surf_ori']:
