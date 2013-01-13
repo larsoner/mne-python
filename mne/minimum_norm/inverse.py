@@ -24,7 +24,7 @@ from ..fiff.write import write_int, write_float_matrix, start_file, \
                          write_coord_trans
 
 from ..fiff.cov import read_cov, write_cov
-from ..fiff.pick import channel_type
+from ..fiff.pick import channel_type, pick_info
 from ..cov import prepare_noise_cov
 from ..forward import compute_depth_prior, read_forward_meas_info, \
                       write_forward_meas_info, is_fixed_orient, \
@@ -404,7 +404,7 @@ def combine_xyz(vec, square=False):
     return comb
 
 
-def _chech_ch_names(inv, info):
+def _check_ch_names(inv, info):
     """Check that channels in inverse operator are measurements"""
 
     inv_ch_names = inv['eigen_fields']['col_names']
@@ -694,7 +694,7 @@ def apply_inverse(evoked, inverse_operator, lambda2, method="dSPM",
     #
     nave = evoked.nave
 
-    _chech_ch_names(inverse_operator, evoked.info)
+    _check_ch_names(inverse_operator, evoked.info)
 
     inv = prepare_inverse_operator(inverse_operator, nave, lambda2, method)
     #
@@ -780,7 +780,7 @@ def apply_inverse_raw(raw, inverse_operator, lambda2, method="dSPM",
     """
     method = _check_method(method, dSPM)
 
-    _chech_ch_names(inverse_operator, raw.info)
+    _check_ch_names(inverse_operator, raw.info)
 
     #
     #   Set up the inverse according to the parameters
@@ -843,7 +843,7 @@ def _apply_inverse_epochs_gen(epochs, inverse_operator, lambda2, method="dSPM",
     """ see apply_inverse_epochs """
     method = _check_method(method, dSPM)
 
-    _chech_ch_names(inverse_operator, epochs.info)
+    _check_ch_names(inverse_operator, epochs.info)
 
     #
     #   Set up the inverse according to the parameters
@@ -1015,15 +1015,17 @@ def _prepare_forward(forward, info, noise_cov, pca=False, verbose=None):
 
     fwd_idx = [fwd_ch_names.index(name) for name in ch_names]
     gain = gain[fwd_idx]
+    info_idx = [info['ch_names'].index(name) for name in ch_names]
+    fwd_info = pick_info(info, info_idx)
 
     logger.info('Total rank is %d' % n_nzero)
 
-    return ch_names, gain, noise_cov, whitener, n_nzero
+    return fwd_info, gain, noise_cov, whitener, n_nzero
 
 
 @verbose
 def make_inverse_operator(info, forward, noise_cov, loose=0.2, depth=0.8,
-                          force_fixed=False, verbose=None):
+                          fixed=False, verbose=None):
     """Assemble inverse operator
 
     Parameters
@@ -1042,7 +1044,7 @@ def make_inverse_operator(info, forward, noise_cov, loose=0.2, depth=0.8,
         whose source coordinate system is not surface based.
     depth : None | float in [0, 1]
         Depth weighting coefficients. If None, no depth weighting is performed.
-    force_fixed : bool
+    fixed : bool
         If True, return a fixed-orientation inverse operator. If True,
         loose=None must also be used.
     verbose : bool, str, int, or None
@@ -1058,7 +1060,7 @@ def make_inverse_operator(info, forward, noise_cov, loose=0.2, depth=0.8,
     # loose=None and force_fixed=True: Make fixed
     #    depth=None, can use fixed fwd, depth=0<x<1 must use free ori
     if loose is None:
-        if not force_fixed:
+        if not fixed:
             raise ValueError('Cannot make inverse with fixed-orientation '
                              'forward solution unless force_fixed is True.')
         if not is_fixed_ori and not forward['surf_ori']:
@@ -1087,7 +1089,7 @@ def make_inverse_operator(info, forward, noise_cov, loose=0.2, depth=0.8,
     # 4. Load the sensor noise covariance matrix and attach it to the forward
     #
 
-    ch_names, gain, noise_cov, whitener, n_nzero = \
+    gain_info, gain, noise_cov, whitener, n_nzero = \
         _prepare_forward(forward, info, noise_cov)
 
     #
@@ -1095,8 +1097,9 @@ def make_inverse_operator(info, forward, noise_cov, loose=0.2, depth=0.8,
     #
 
     if depth is not None:
-        depth_prior = compute_depth_prior(gain, exp=depth, forward=forward,
-                                          ch_names=ch_names)
+        patch_areas = forward.get('patch_areas', None)
+        depth_prior = compute_depth_prior(gain, gain_info, is_fixed_ori,
+                                          exp=depth, patch_areas=patch_areas)
     else:
         depth_prior = np.ones(gain.shape[1], dtype=gain.dtype)
 
@@ -1112,11 +1115,11 @@ def make_inverse_operator(info, forward, noise_cov, loose=0.2, depth=0.8,
             forward = deepcopy(forward)
             _to_fixed_ori(forward)
             is_fixed_ori = is_fixed_orient(forward)
-            ch_names, gain, noise_cov, whitener, n_nzero = \
+            gain_info, gain, noise_cov, whitener, n_nzero = \
                 _prepare_forward(forward, info, noise_cov, verbose=False)
 
     logger.info("Computing inverse operator with %d channels."
-                % len(ch_names))
+                % len(gain_info['ch_names']))
 
     #
     # 6. Compose the source covariance matrix
@@ -1184,8 +1187,9 @@ def make_inverse_operator(info, forward, noise_cov, loose=0.2, depth=0.8,
     logger.info('    largest singular value = %g' % np.max(sing))
     logger.info('    scaling factor to adjust the trace = %g' % trace_GRGT)
 
-    eigen_fields = dict(data=eigen_fields.T, col_names=ch_names, row_names=[],
-                        nrow=eigen_fields.shape[1], ncol=eigen_fields.shape[0])
+    eigen_fields = dict(data=eigen_fields.T, col_names=gain_info['ch_names'],
+                        row_names=[], nrow=eigen_fields.shape[1],
+                        ncol=eigen_fields.shape[0])
     eigen_leads = dict(data=eigen_leads.T, nrow=eigen_leads.shape[1],
                        ncol=eigen_leads.shape[0], row_names=[],
                        col_names=[])
@@ -1194,7 +1198,8 @@ def make_inverse_operator(info, forward, noise_cov, loose=0.2, depth=0.8,
     # Handle methods
     has_meg = False
     has_eeg = False
-    ch_idx = [k for k, c in enumerate(info['chs']) if c['ch_name'] in ch_names]
+    ch_idx = [k for k, c in enumerate(info['chs'])
+                                    if c['ch_name'] in gain_info['ch_names']]
     for idx in ch_idx:
         ch_type = channel_type(info, idx)
         if ch_type == 'eeg':
