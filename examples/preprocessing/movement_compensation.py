@@ -83,3 +83,6 @@ evoked_raw_mc.plot_topomap(title='Moving: movement compensated (raw)',
 evoked_evo_mc = mne.epochs.average_movements(epochs, head_pos=head_pos)
 evoked_evo_mc.plot_topomap(title='Moving: movement compensated (evoked)',
                            **topo_kwargs)
+
+# Note: Evoked movement compensation (average_movements) does not work well
+# with so few epochs spanning such large deviations.

@@ -695,8 +695,12 @@ def test_fine_calibration():
 def test_regularization():
     """Test Maxwell filter regularization."""
     # Load testing data (raw, SSS std origin, SSS non-standard origin)
-    min_tols = (20., 2.6, 1.0)
-    med_tols = (200., 21., 3.7)
+    in_min_tols = (20., 2.6, 1.0)
+    in_med_tols = (200., 21., 3.7)
+    in_shieldings = (None, 14.8, None)
+    svd_min_tols = (0.12, 0.29, 0.44)
+    svd_med_tols = (1.0, 2.0, 2.1)
+    svd_shieldings = (None, 12.8, None)
     origins = ((0., 0., 0.04), (0.,) * 3, (0., 0.02, 0.02))
     coord_frames = ('head', 'meg', 'head')
     raw_fnames = (raw_fname, erm_fname, sample_fname)
@@ -710,10 +714,22 @@ def test_regularization():
         # Test "in" regularization
         raw_sss = maxwell_filter(raw, coord_frame=coord_frames[ii],
                                  origin=origins[ii])
-        assert_meg_snr(raw_sss, sss_reg_in, min_tols[ii], med_tols[ii], msg=rf)
+        assert_meg_snr(raw_sss, sss_reg_in,
+                       in_min_tols[ii], in_med_tols[ii], msg=rf)
+        if in_shieldings[ii] is not None:
+            _assert_shielding(raw_sss, raw, in_shieldings[ii], meg='mag')
 
         # check components match
         _check_reg_match(raw_sss, sss_reg_in, comp_tols[ii])
+
+        # Test "svd" regularization
+        raw_sss = maxwell_filter(raw, coord_frame=coord_frames[ii],
+                                 origin=origins[ii], regularize='svd',
+                                 verbose=True)
+        assert_meg_snr(raw_sss, sss_reg_in,
+                       svd_min_tols[ii], svd_med_tols[ii], msg=rf)
+        if svd_shieldings[ii] is not None:
+            _assert_shielding(raw_sss, raw, svd_shieldings[ii], meg='mag')
 
 
 def _check_reg_match(sss_py, sss_mf, comp_tol):
@@ -829,6 +845,10 @@ def _assert_shielding(raw_sss, erm_power, min_factor, max_factor=np.inf,
         erm_power = np.sqrt((erm_power[picks_erm][0] ** 2).sum())
     sss_power = raw_sss[picks][0].ravel()
     sss_power = np.sqrt(np.sum(sss_power * sss_power))
+    if isinstance(erm_power, BaseRaw):
+        picks = pick_types(erm_power.info, meg=meg)
+        erm_power = erm_power[picks][0]
+        erm_power = np.sqrt(np.sum(erm_power * erm_power))
     factor = erm_power / sss_power
     assert min_factor <= factor < max_factor, (
         'Shielding factor not %0.3f <= %0.3f < %0.3f'
@@ -1108,6 +1128,17 @@ def test_shielding_factor(tmp_path):
                                  extended_proj=proj[:3])
     _assert_shielding(raw_sss, erm_power, 48, 50)
     assert counts[0] == 1
+
+    # Fine cal + Crosstalk + tSSS + reg-svd (sometimes better than reg-in)
+    raw_sss = maxwell_filter(raw_erm, calibration=fine_cal_fname,
+                             cross_talk=ctc_fname, st_duration=1.,
+                             origin=mf_meg_origin,
+                             coord_frame='meg', regularize='svd')
+    _assert_shielding(raw_sss, erm_power, 39)
+    raw_sss = maxwell_filter(raw_erm, calibration=fine_cal_fname,
+                             cross_talk=ctc_fname, st_duration=1.,
+                             coord_frame='meg', regularize='svd')
+    _assert_shielding(raw_sss, erm_power, 49)
 
 
 @pytest.mark.slowtest

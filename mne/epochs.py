@@ -3644,8 +3644,8 @@ def concatenate_epochs(epochs_list, add_offset=True, *, on_mismatch='raise',
 @verbose
 def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
                       origin='auto', weight_all=True, int_order=8, ext_order=3,
-                      destination=None, ignore_ref=False, return_mapping=False,
-                      mag_scale=100., verbose=None):
+                      destination=None, *, regularize=None, ignore_ref=False,
+                      return_mapping=False, mag_scale=100., verbose=None):
     """Average data using Maxwell filtering, transforming using head positions.
 
     Parameters
@@ -3665,6 +3665,7 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
         receive uniform weight per epoch.
     %(int_order_maxwell)s
     %(ext_order_maxwell)s
+    %(regularize_maxwell_reg)s
     %(destination_maxwell_dest)s
     %(ignore_ref_maxwell)s
     return_mapping : bool
@@ -3710,7 +3711,10 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
                                         _check_usable, _col_norm_pinv,
                                         _get_n_moments, _get_mf_picks_fix_mags,
                                         _prep_mf_coils, _check_destination,
-                                        _remove_meg_projs, _get_coil_scale)
+                                        _check_regularize, _prep_regularize,
+                                        _regularize, _remove_meg_projs,
+                                        _get_coil_scale)
+    regularize = _check_regularize(regularize, ('svd',))
     if head_pos is None:
         raise TypeError('head_pos must be provided and cannot be None')
     from .chpi import head_pos_to_trans_rot_t
@@ -3732,7 +3736,7 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
     if not np.array_equal(epochs.events[:, 0], np.unique(epochs.events[:, 0])):
         raise RuntimeError('Epochs must have monotonically increasing events')
     info_to = epochs.info.copy()
-    meg_picks, mag_picks, grad_picks, good_mask, _ = \
+    meg_picks, mag_picks, grad_picks, good_mask, mag_or_fine = \
         _get_mf_picks_fix_mags(info_to, int_order, ext_order, ignore_ref)
     coil_scale, mag_scale = _get_coil_scale(
         meg_picks, mag_picks, grad_picks, mag_scale, info_to)
@@ -3754,6 +3758,10 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
     decomp_coil_scale = coil_scale[good_mask]
     exp = dict(int_order=int_order, ext_order=ext_order, head_frame=True,
                origin=origin)
+    # prepare regularization techniques
+    _prep_regularize(regularize, all_coils_recon, None, exp, ignore_ref,
+                     coil_scale, grad_picks, mag_picks, mag_or_fine,
+                     mag_scale)
     n_in = _get_n_moments(int_order)
     for ei, epoch in enumerate(epochs):
         event_time = epochs.events[epochs._current - 1, 0] / orig_sfreq
@@ -3764,6 +3772,7 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
             use_idx = use_idx[-1]
             trans = np.vstack([np.hstack([rot[use_idx], trn[[use_idx]].T]),
                                [[0., 0., 0., 1.]]])
+        assert not np.isnan(trans).any()
         loc_str = ', '.join('%0.1f' % tr for tr in (trans[:3, 3] * 1000))
         if last_trans is None or not np.allclose(last_trans, trans):
             logger.info('    Processing epoch %s (device location: %s mm)'
@@ -3781,6 +3790,10 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
             # Get the weight from the un-regularized version (eq. 44)
             weight = np.linalg.norm(S[:, :n_in])
             # XXX Eventually we could do cross-talk and fine-cal here
+            # as well as eSSS
+            if regularize is not None:
+                S = _regularize(regularize, exp, S, mag_or_fine,
+                                t=event_time, extended_remove=[])[0]
             S *= weight
         S_decomp += S  # eq. 41
         epoch[slice(None) if weight_all else meg_picks] *= weight
@@ -3808,10 +3821,20 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
         # so we do not provide the option here.
         S_recon /= coil_scale
         # Invert
-        pS_ave = _col_norm_pinv(S_decomp)[0][:n_in]
+        logger.info('    Inverting weighted average basis')
+        if regularize is not None:
+            pS_ave, sing, reg_moments, n_use_in = _regularize(
+                regularize, exp, S_decomp, mag_or_fine, t=0,
+                extended_remove=[])[1:]
+            reg_in_moments = reg_moments[:n_use_in]
+        else:
+            pS_ave, sing = _col_norm_pinv(S_decomp)
+            reg_in_moments = np.arange(n_in)
+        del S_decomp  # ruined by _col_norm_pinv
+        pS_ave = pS_ave[reg_in_moments]
         pS_ave *= decomp_coil_scale.T
         # Get mapping matrix
-        mapping = np.dot(S_recon, pS_ave)
+        mapping = np.dot(S_recon[:, reg_in_moments], pS_ave)
         # Apply mapping
         data[meg_picks] = np.dot(mapping, data[meg_picks[good_mask]])
     info_to['dev_head_t'] = recon_trans  # set the reconstruction transform

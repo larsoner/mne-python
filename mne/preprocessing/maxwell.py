@@ -377,7 +377,7 @@ def _prep_maxwell_filter(
     # triage inputs ASAP to avoid late-thrown errors
     _validate_type(raw, BaseRaw, 'raw')
     _check_usable(raw)
-    _check_regularize(regularize)
+    regularize = _check_regularize(regularize)  # str|None->dict
     st_correlation = float(st_correlation)
     if st_correlation <= 0. or st_correlation > 1.:
         raise ValueError('Need 0 < st_correlation <= 1., got %s'
@@ -529,6 +529,12 @@ def _prep_maxwell_filter(
         mag_scale=mag_scale)
     update_kwargs.update(
         nchan=good_mask.sum(), st_only=st_only, recon_trans=recon_trans)
+
+    # prepare regularization techniques
+    _prep_regularize(regularize, all_coils, calibration, exp, ignore_ref,
+                     coil_scale, grad_picks, mag_picks, mag_or_fine,
+                     mag_scale)
+
     params = dict(
         skip_by_annotation=skip_by_annotation,
         st_duration=st_duration, st_correlation=st_correlation,
@@ -1019,15 +1025,11 @@ def _get_decomp(trans, all_coils, cal, regularize, exp, ignore_ref,
 
     #
     # Regularization
-    #
-    S_decomp, reg_moments, n_use_in = _regularize(
-        regularize, exp, S_decomp, mag_or_fine, extended_remove, t=t)
-    S_decomp_full = S_decomp_full.take(reg_moments, axis=1)
-
-    #
     # Pseudo-inverse of total multipolar moment basis set (Part of Eq. 37)
     #
-    pS_decomp, sing = _col_norm_pinv(S_decomp.copy())
+    S_decomp, pS_decomp, sing, reg_moments, n_use_in = _regularize(
+        regularize, exp, S_decomp, mag_or_fine, extended_remove, t=t)
+    S_decomp_full = S_decomp_full.take(reg_moments, axis=1)
     cond = sing[0] / sing[-1]
     if bad_condition != 'ignore' and cond >= 1000.:
         msg = 'Matrix is badly conditioned: %0.0f >= 1000' % cond
@@ -1073,26 +1075,37 @@ def _regularize(regularize, exp, S_decomp, mag_or_fine, extended_remove, t,
     n_in = _get_n_moments(int_order)
     n_out = S_decomp.shape[1] - n_in
     t_str = '%8.3f' % t
-    if regularize is not None:  # regularize='in'
-        in_removes, out_removes = _regularize_in(
-            int_order, ext_order, S_decomp, mag_or_fine, extended_remove)
+    if regularize is not None and regularize['kind'] == 'svd':
+        pS_decomp, sing, S_decomp = _regularize_svd(
+            S_decomp, regularize['min_svd'], exp,
+            extended_remove)
+        reg_moments = np.arange(n_in + n_out)
+        n_use_in = n_in
+        logger.info('        Using %s/%s harmonic components for %s'
+                    % (len(sing), n_in + n_out, t_str))
     else:
-        in_removes = []
-        out_removes = _regularize_out(int_order, ext_order, mag_or_fine,
-                                      extended_remove)
-    reg_in_moments = np.setdiff1d(np.arange(n_in), in_removes)
-    reg_out_moments = np.setdiff1d(np.arange(n_in, S_decomp.shape[1]),
-                                   out_removes)
-    n_use_in = len(reg_in_moments)
-    n_use_out = len(reg_out_moments)
-    reg_moments = np.concatenate((reg_in_moments, reg_out_moments))
-    S_decomp = S_decomp.take(reg_moments, axis=1)
-    if regularize is not None or n_use_out != n_out:
-        logger.info('        Using %s/%s harmonic components for %s  '
-                    '(%s/%s in, %s/%s out)'
-                    % (n_use_in + n_use_out, n_in + n_out, t_str,
-                       n_use_in, n_in, n_use_out, n_out))
-    return S_decomp, reg_moments, n_use_in
+        if regularize is not None:  # regularize='in'
+            in_removes, out_removes = _regularize_in(
+                int_order, ext_order, S_decomp, mag_or_fine,
+                extended_remove)
+        else:
+            in_removes = []
+            out_removes = _regularize_out(int_order, ext_order, mag_or_fine,
+                                          extended_remove)
+        reg_in_moments = np.setdiff1d(np.arange(n_in), in_removes)
+        reg_out_moments = np.setdiff1d(np.arange(n_in, n_in + n_out),
+                                       out_removes)
+        n_use_in = len(reg_in_moments)
+        n_use_out = len(reg_out_moments)
+        reg_moments = np.concatenate((reg_in_moments, reg_out_moments))
+        S_decomp = S_decomp.take(reg_moments, axis=1)
+        pS_decomp, sing = _col_norm_pinv(S_decomp.copy())
+        if regularize is not None or n_use_out != n_out:
+            logger.info('        Using %s/%s harmonic components for %s  '
+                        '(%s/%s in, %s/%s out)'
+                        % (n_use_in + n_use_out, n_in + n_out, t_str,
+                           n_use_in, n_in, n_use_out, n_out))
+    return S_decomp, pS_decomp, sing, reg_moments, n_use_in
 
 
 @verbose
@@ -1147,11 +1160,13 @@ def _get_mf_picks_fix_mags(info, int_order, ext_order, ignore_ref=False,
     return meg_picks, mag_picks, grad_picks, good_mask, mag_or_fine
 
 
-def _check_regularize(regularize):
+def _check_regularize(regularize, allowed_str=('in', 'svd')):
     """Ensure regularize is valid."""
-    if not (regularize is None or (isinstance(regularize, str) and
-                                   regularize in ('in',))):
-        raise ValueError('regularize must be None or "in"')
+    _validate_type(regularize, (str, None), 'regularize')
+    if regularize is None:
+        return None
+    _check_option('regularize', regularize, allowed_str)
+    return dict(kind=regularize)
 
 
 def _check_usable(inst):
@@ -1164,6 +1179,50 @@ def _check_usable(inst):
         raise RuntimeError('Maxwell filter cannot be done on compensated '
                            'channels, but data have been compensated with '
                            'grade %s.' % current_comp)
+
+
+def _prep_regularize(regularize, all_coils, calibration, exp, ignore_ref,
+                     coil_scale, grad_picks, mag_picks, mag_or_fine,
+                     mag_scale):
+    """Prepare for regularization if necessary."""
+    # from scipy.optimize import fmin_cobyla
+    if regularize is not None and regularize['kind'] == 'svd':
+
+        def objective(x):
+            return 1. / _get_min_svd(
+                x, all_coils, coil_scale, calibration, ignore_ref,
+                exp, grad_picks, mag_picks, mag_or_fine, mag_scale)
+
+        # We could find min sing val at best location as:
+        # x_opt = fmin_cobyla(objective, np.zeros(3), (),
+        #                     rhobeg=1e-2, rhoend=1e-4, disp=False)
+        x_opt = np.zeros(3)
+        min_svd = 1. / objective(x_opt)
+        origin_str = ', '.join('%0.1f' % (1000 * x) for x in x_opt)
+        logger.info('    Using minimum detectable value for regularization: '
+                    '%0.3e (at device origin [%s])' % (min_svd, origin_str))
+        regularize['min_svd'] = min_svd
+
+
+def _get_min_svd(origin, all_coils, coil_scale, calibration, ignore_ref,
+                 exp, grad_picks, mag_picks, mag_or_fine, mag_scale):
+    """Compute an objective function for minimization."""
+    this_exp = dict(origin=origin, int_order=exp['int_order'],
+                    ext_order=exp['ext_order'],
+                    head_frame=False)
+    del exp
+    # get the decomp matrix at device origin, no regularization
+    S_decomp = _get_s_decomp(
+        this_exp, all_coils, trans=None, coil_scale=coil_scale,
+        cal=calibration, ignore_ref=ignore_ref, grad_picks=grad_picks,
+        mag_picks=mag_picks, mag_scale=mag_scale)
+    # Using un-regularized data:
+    n_in = _get_n_moments(this_exp['int_order'])
+    sing = _col_norm_pinv(S_decomp[:, :n_in].copy())[1]
+    # Using "in" regularization:
+    # sing = _regularize(dict(kind='in'), this_exp, S_decomp,
+    #                    mag_or_fine, t=0, verbose=False)[2]
+    return sing[-1]
 
 
 def _col_norm_pinv(x):
@@ -2001,6 +2060,37 @@ def _regularize_in(int_order, ext_order, S_decomp, mag_or_fine,
                  % (I_tots[lim_idx], 100 * I_tots[lim_idx] / max_info,
                     max_info))
     return in_removes, out_removes
+
+
+def _regularize_svd(S_decomp, min_svd, exp, extended_remove):
+    """Regularize basis set using SVD thresholding."""
+    n_in, n_out = _get_n_moments([exp['int_order'], exp['ext_order']])
+    norm = np.sqrt(np.sum(S_decomp * S_decomp, axis=0))
+    S_decomp /= norm
+    S_decomp_in_full = S_decomp[:, :n_in].copy()
+    u, s, v = _safe_svd(S_decomp[:, :n_in], full_matrices=False,
+                        **check_disable)
+    mask = (s >= min_svd)
+    u, s, v = u[:, mask], s[mask], v[mask]
+    S_decomp[:, :n_in] = np.dot(u * s, v)
+    # transformation to change back to physical coordinates (multipole moments)
+    T = np.dot(np.linalg.pinv(S_decomp_in_full), S_decomp[:, :n_in])
+
+    # get our inverse
+    u, s, v = _safe_svd(S_decomp, full_matrices=False, **check_disable)
+    # Keep internal + external components now
+    mask = np.insert(mask, 0, np.ones(n_out, bool))
+    u, s, v = u[:, mask], s[mask], v[mask]
+    pS_decomp = np.dot(v.T * 1. / s, u.T)
+    pS_decomp[:n_in] = np.dot(T, pS_decomp[:n_in])
+    # undo our normalization
+    pS_decomp /= norm[:, np.newaxis]
+    S_decomp *= norm
+    # XXX Evuntually we need to use something like this to deal with
+    # non-Neuromag systems:
+    # out_removes = _regularize_out(int_order, ext_order, mag_or_fine,
+    #                               extended_remove)
+    return pS_decomp, s, S_decomp
 
 
 def _compute_sphere_activation_in(degrees):

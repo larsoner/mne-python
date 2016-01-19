@@ -2597,9 +2597,14 @@ reg_affine : ndarray of float, shape (4, 4)
 
 docdict['regularize_maxwell_reg'] = """
 regularize : str | None
-    Basis regularization type, must be "in" or None.
+    Basis regularization type, must be "in", "svd" or None.
     "in" is the same algorithm as the "-regularize in" option in
-    MaxFilter™.
+    MaxFilter™. "svd" uses SVD-based regularization by
+    cutting off singular values of the basis matrix below the minimum
+    detectability threshold of the device origin.
+
+    .. versionchanged:: 1.2
+       Added support for "svd" regularization.
 """
 
 
