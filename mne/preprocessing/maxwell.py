@@ -716,7 +716,8 @@ def _regularize(regularize, exp, S_decomp, mag_or_fine):
     n_in, n_out = _get_n_moments([int_order, ext_order])
     if regularize is not None and regularize['kind'] == 'svd':
         logger.info('    Computing regularization')
-        pS_decomp, sing = _regularize_svd(S_decomp, regularize['min_svd'])
+        S_decomp, pS_decomp, sing = _regularize_svd(
+            S_decomp, regularize['min_svd'], n_in)
         reg_moments = np.arange(n_in + n_out)
         n_use_in = n_in
         logger.info('        Using %s/%s harmonic components'
@@ -846,8 +847,7 @@ def _get_min_svd(origin, all_coils, coil_scale, calibration, ignore_ref,
                  exp, grad_picks, mag_picks):
     """Helper objective function"""
     this_exp = dict(origin=origin, int_order=exp['int_order'],
-                    ext_order=exp['ext_order'],
-                    head_frame=False)
+                    ext_order=0, head_frame=False)
     # get the decomp matrix at device origin, no regularization
     S_decomp = _get_s_decomp(
         this_exp, all_coils, trans=None, coil_scale=coil_scale,
@@ -1864,11 +1864,20 @@ def _regularize_in(int_order, ext_order, S_decomp, mag_or_fine):
     return in_removes, out_removes
 
 
-def _regularize_svd(S_decomp, min_svd):
+def _regularize_svd(S_decomp, min_svd, n_in):
     """Regularize basis set using SVD thresholding"""
-    # out_removes = _regularize_out(int_order, ext_order, mag_or_fine) XXX FIX
-    pS_decomp, sing = _col_norm_pinv(S_decomp.copy(), min_svd)
-    return pS_decomp, sing
+    # threshold in basis
+    x = S_decomp[:, :n_in]
+    norm = np.sqrt(np.sum(x * x, axis=0))
+    x /= norm
+    u, s, v = linalg.svd(x, full_matrices=False, overwrite_a=True,
+                         **check_disable)
+    v /= norm
+    mask = (s >= min_svd)
+    S_decomp[:, :n_in] = np.dot(u[:, mask] * s[mask], v[mask])
+    # Compute complete pinv
+    pS_decomp, sing = _col_norm_pinv(S_decomp.copy(), 1e-6)
+    return S_decomp, pS_decomp, sing
 
 
 def _compute_sphere_activation_in(degrees):
