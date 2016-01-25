@@ -112,12 +112,16 @@ def test_average_movements():
         evoked_move_non = average_movements(epochs, pos=head_pos,
                                             weight_all=False, origin=origin)
     assert_equal(len(w), 1)
+    evoked_move_svd = average_movements(epochs, head_pos=head_pos,
+                                        weight_all=False, origin=origin,
+                                        regularize='svd', verbose=True)
     evoked_move_all = average_movements(epochs, head_pos=head_pos,
                                         weight_all=True, origin=origin)
     evoked_stat_all = average_movements(epochs, head_pos=head_pos_stat,
                                         weight_all=True, origin=origin)
     evoked_std = epochs.average()
-    for ev in (evoked_move_non, evoked_move_all, evoked_stat_all):
+    for ev in (evoked_move_non, evoked_move_all, evoked_stat_all,
+               evoked_move_svd):
         assert_equal(ev.nave, evoked_std.nave)
         assert_equal(len(ev.info['bads']), 0)
     # substantial changes to MEG data
@@ -126,8 +130,16 @@ def test_average_movements():
         assert_raises(AssertionError, assert_meg_snr,
                       ev, evoked_std, 1., 1.)
     meg_picks = pick_types(evoked_std.info, meg=True, exclude=())
+    other_picks = np.setdiff1d(np.arange(len(evoked_move_all.ch_names)),
+                               meg_picks)
     assert_allclose(evoked_move_non.data[meg_picks],
                     evoked_move_all.data[meg_picks])
+    assert_allclose(evoked_move_non.data[other_picks],
+                    evoked_move_svd.data[other_picks])
+    assert_raises(AssertionError, assert_allclose,  # not that similar w/reg
+                  evoked_move_non.data[meg_picks],
+                  evoked_move_svd.data[meg_picks], rtol=1e-1, atol=1e-20)
+
     # compare to averaged movecomp version (should be fairly similar)
     raw_sss = Raw(fname_raw_movecomp_sss)
     raw_sss.crop(*crop, copy=False).load_data()
@@ -143,6 +155,7 @@ def test_average_movements():
     assert_raises(AssertionError, assert_meg_snr,
                   evoked_sss, evoked_move_all, 0., 0.)
     assert_meg_snr(evoked_sss, evoked_move_non, 0.02, 2.6)
+    assert_meg_snr(evoked_sss, evoked_move_svd, 0.5, 1.0)
     assert_meg_snr(evoked_sss, evoked_stat_all, 0.05, 3.2)
     # these should be close to numerical precision
     assert_allclose(evoked_sss_stat.data, evoked_stat_all.data, atol=1e-20)

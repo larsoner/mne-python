@@ -548,8 +548,10 @@ def test_fine_calibration():
 def test_regularization():
     """Test Maxwell filter regularization"""
     # Load testing data (raw, SSS std origin, SSS non-standard origin)
-    min_tols = (100., 2.6, 1.0)
-    med_tols = (1000., 21.4, 3.7)
+    in_min_tols = (100., 2.6, 1.0)
+    in_med_tols = (1000., 21.4, 3.7)
+    svd_min_tols = (0.3, 0.3, 0.6)
+    svd_med_tols = (1.7, 1.9, 2.6)
     origins = ((0., 0., 0.04), (0.,) * 3, (0., 0.02, 0.02))
     coord_frames = ('head', 'meg', 'head')
     raw_fnames = (raw_fname, erm_fname, sample_fname)
@@ -564,7 +566,8 @@ def test_regularization():
         # Test "in" regularization
         raw_sss = maxwell_filter(raw, coord_frame=coord_frames[ii],
                                  origin=origins[ii])
-        assert_meg_snr(raw_sss, sss_reg_in, min_tols[ii], med_tols[ii], msg=rf)
+        assert_meg_snr(raw_sss, sss_reg_in,
+                       in_min_tols[ii], in_med_tols[ii], msg=rf)
 
         # check components match
         py_info = raw_sss.info['proc_history'][0]['max_info']['sss_info']
@@ -580,6 +583,13 @@ def test_regularization():
             assert_equal(inf['components'][:n_in].sum(), inf['nfree'])
         assert_allclose(py_info['nfree'], mf_info['nfree'],
                         atol=comp_tols[ii], err_msg=rf)
+
+        # Test "svd" regularization
+        raw_sss = maxwell_filter(raw, coord_frame=coord_frames[ii],
+                                 origin=origins[ii], regularize='svd',
+                                 verbose=True)
+        assert_meg_snr(raw_sss, sss_reg_in,
+                       svd_min_tols[ii], svd_med_tols[ii], msg=rf)
 
 
 @testing.requires_testing_data
@@ -649,7 +659,7 @@ def _assert_shielding(raw_sss, erm_power, shielding_factor, meg='mag'):
 @slow_test
 @requires_svd_convergence
 @testing.requires_testing_data
-def test_noise_rejection():
+def test_shielding_factor():
     """Test Maxwell filter shielding factor using empty room"""
     with warnings.catch_warnings(record=True):  # maxshield
         raw_erm = Raw(erm_fname, allow_maxshield=True, preload=True)
@@ -739,6 +749,17 @@ def test_noise_rejection():
                              coord_frame='meg', regularize='in')
     # Our 3D cal has worse defaults for this ERM than the 1D file
     _assert_shielding(raw_sss, erm_power, 44)
+
+    # Fine cal + Crosstalk + tSSS + Reg-svd (sometimes better than reg-in)
+    raw_sss = maxwell_filter(raw_erm, calibration=fine_cal_fname,
+                             cross_talk=ctc_fname, st_duration=1.,
+                             origin=mf_meg_origin,
+                             coord_frame='meg', regularize='svd')
+    _assert_shielding(raw_sss, erm_power, 56)
+    raw_sss = maxwell_filter(raw_erm, calibration=fine_cal_fname,
+                             cross_talk=ctc_fname, st_duration=1.,
+                             coord_frame='meg', regularize='svd')
+    _assert_shielding(raw_sss, erm_power, 58)
 
 
 @slow_test

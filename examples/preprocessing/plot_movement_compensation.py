@@ -50,3 +50,6 @@ evoked.plot_topomap(title='Moving: naive average', **topo_kwargs)
 raw_sss = maxwell_filter(raw, head_pos=pos)
 evoked_raw_mc = mne.Epochs(raw_sss, events, 1, -0.2, 0.8).average()
 evoked_raw_mc.plot_topomap(title='Moving: movement compensated', **topo_kwargs)
+
+# Note: Evoked movement compensation (average_movements) does not work well
+# with so few epochs spanning such large deviations.

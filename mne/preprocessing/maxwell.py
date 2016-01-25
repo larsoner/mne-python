@@ -103,8 +103,8 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
         "in" is the same algorithm as the "-regularize in" option in
         MaxFilter™. "svd" (new in v0.12) uses SVD-based regularization by
         cutting off singular values of the basis matrix below the minimum
-        detectability threshold of an ideal head position (at device
-        origin).
+        detectability threshold of an ideal head position (usually near
+        the device origin).
     ignore_ref : bool
         If True, do not include reference channels in compensation. This
         option should be True for KIT files, since Maxwell filtering
@@ -448,7 +448,7 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
             _do_tSSS(out_meg_data, orig_in_data, resid, st_correlation,
                      n_positions, t_str)
         else:
-            if pos[0] is not None:
+            if head_pos[0] is not None:
                 pl = 's' if n_positions > 1 else ''
                 logger.info('        Used % 2d head position%s for %s'
                             % (n_positions, pl, t_str))
@@ -717,7 +717,8 @@ def _get_s_decomp(exp, all_coils, trans, coil_scale, cal, ignore_ref,
     return S_decomp
 
 
-def _regularize(regularize, exp, S_decomp, mag_or_fine):
+@verbose
+def _regularize(regularize, exp, S_decomp, mag_or_fine, verbose=None):
     """Regularize a decomposition matrix"""
     # ALWAYS regularize the out components according to norm, since
     # gradiometer-only setups (e.g., KIT) can have zero first-order
@@ -726,7 +727,8 @@ def _regularize(regularize, exp, S_decomp, mag_or_fine):
     n_in, n_out = _get_n_moments([int_order, ext_order])
     if regularize is not None and regularize['kind'] == 'svd':
         logger.info('    Computing regularization')
-        pS_decomp, sing = _regularize_svd(S_decomp, regularize['min_svd'])
+        S_decomp, pS_decomp, sing = _regularize_svd(
+            S_decomp, regularize['min_svd'])
         reg_moments = np.arange(n_in + n_out)
         n_use_in = n_in
         logger.info('        Using %s/%s harmonic components'
@@ -804,14 +806,14 @@ def _get_mf_picks(info, int_order, ext_order, ignore_ref=False,
             mag_or_fine)
 
 
-def _check_regularize(regularize):
+def _check_regularize(regularize, allowed_str=('in', 'svd')):
     """Helper to ensure regularize is valid"""
     if regularize is None:
         return None
-    msg = 'regularize must be None, "in", or "svd"'
+    msg = 'regularize must be ' + ", ".join(allowed_str) + ', or None'
     if not isinstance(regularize, string_types):
         raise TypeError(msg)
-    if regularize not in ('in', 'svd'):
+    if regularize not in allowed_str:
         raise ValueError(msg)
     return dict(kind=regularize)
 
@@ -841,7 +843,7 @@ def _prep_regularize(regularize, all_coils, calibration, exp, ignore_ref,
         def objective(x):
             return 1. / _get_min_svd(
                 x, all_coils, coil_scale, calibration, ignore_ref,
-                exp, grad_picks, mag_picks)
+                exp, grad_picks, mag_picks, mag_or_fine)
 
         x_opt = fmin_cobyla(objective, x0, (), rhobeg=1e-2, rhoend=1e-4,
                             disp=False)
@@ -853,7 +855,7 @@ def _prep_regularize(regularize, all_coils, calibration, exp, ignore_ref,
 
 
 def _get_min_svd(origin, all_coils, coil_scale, calibration, ignore_ref,
-                 exp, grad_picks, mag_picks):
+                 exp, grad_picks, mag_picks, mag_or_fine):
     """Helper objective function"""
     this_exp = dict(origin=origin, int_order=exp['int_order'],
                     ext_order=exp['ext_order'],
@@ -863,8 +865,13 @@ def _get_min_svd(origin, all_coils, coil_scale, calibration, ignore_ref,
         this_exp, all_coils, trans=None, coil_scale=coil_scale,
         cal=calibration, ignore_ref=ignore_ref, grad_picks=grad_picks,
         mag_picks=mag_picks, good_picks=np.arange(len(coil_scale)))
-    svd_min = _col_norm_pinv(S_decomp.copy())[1].min()
-    return svd_min
+    # If we wanted to use the un-regularized data, we'd just do:
+    sing = _col_norm_pinv(S_decomp.copy())[1]
+    # But instead we use "in" regularization to find the actual min detectable
+    # value:
+    S_decomp, sing = _regularize(dict(kind='in'), exp, S_decomp,
+                                 mag_or_fine, verbose=False)[:3:2]
+    return sing[-1]
 
 
 def _col_norm_pinv(x, thresh=None):
@@ -881,8 +888,11 @@ def _col_norm_pinv(x, thresh=None):
         return np.dot(v.T * 1. / s, u.T), s
     else:
         mask = (s >= thresh)
+        u = u[:, mask]
         s = s[mask]
-        return np.dot(v.T[:, mask] * 1. / s, u.T[mask]), s
+        v = v[mask]
+        x = np.dot(u * s, v * norm) * norm
+        return x, np.dot(v.T * (1. / s), u.T), s
 
 
 def _sq(x):
@@ -1876,9 +1886,7 @@ def _regularize_in(int_order, ext_order, S_decomp, mag_or_fine):
 
 def _regularize_svd(S_decomp, min_svd):
     """Regularize basis set using SVD thresholding"""
-    # out_removes = _regularize_out(int_order, ext_order, mag_or_fine) XXX FIX
-    pS_decomp, sing = _col_norm_pinv(S_decomp.copy(), min_svd)
-    return pS_decomp, sing
+    return _col_norm_pinv(S_decomp.copy(), min_svd)
 
 
 def _compute_sphere_activation_in(degrees):
