@@ -155,7 +155,7 @@ def test_average_movements():
     assert_raises(AssertionError, assert_meg_snr,
                   evoked_sss, evoked_move_all, 0., 0.)
     assert_meg_snr(evoked_sss, evoked_move_non, 0.02, 2.6)
-    assert_meg_snr(evoked_sss, evoked_move_svd, 0.5, 1.0)
+    assert_meg_snr(evoked_sss, evoked_move_svd, 0.01, 0.5)
     assert_meg_snr(evoked_sss, evoked_stat_all, 0.05, 3.2)
     # these should be close to numerical precision
     assert_allclose(evoked_sss_stat.data, evoked_stat_all.data, atol=1e-20)
@@ -165,9 +165,14 @@ def test_average_movements():
     x = head_pos_to_trans_rot_t(head_pos[1])
     epochs.info['dev_head_t']['trans'][:3, :3] = x[1]
     epochs.info['dev_head_t']['trans'][:3, 3] = x[0]
+    assert_raises(AssertionError, assert_allclose,
+                  epochs.info['dev_head_t']['trans'],
+                  destination['trans'])
     evoked_miss = average_movements(epochs, head_pos=head_pos[2:],
                                     origin=origin, destination=destination)
     assert_allclose(evoked_miss.data, evoked_move_all.data)
+    assert_allclose(evoked_miss.info['dev_head_t']['trans'],
+                    destination['trans'])
 
     # degenerate cases
     destination['to'] = destination['from']  # bad dest

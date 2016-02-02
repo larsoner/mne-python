@@ -2835,7 +2835,8 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
                                  coil_scale=decomp_coil_scale)
             # XXX Eventually we could do cross-talk and fine-cal here
             if regularize is not None:
-                S = _regularize(regularize, exp, S, mag_or_fine)[0]
+                S = _regularize(regularize, exp, S, mag_or_fine,
+                                verbose=False)[0]
             # Get the weight from the un-regularized version
             weight = np.sqrt(np.sum(S * S))  # frobenius norm (eq. 44)
             S *= weight
@@ -2865,12 +2866,19 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
         # so we do not provide the option here.
         S_recon /= coil_scale
         # Invert
-        pS_ave = _col_norm_pinv(S_decomp)[0][:n_in]
+        thresh = regularize['min_svd'] if regularize is not None else None
+        pS_ave, sing = _col_norm_pinv(S_decomp, thresh=thresh)[:2]
+        del S_decomp  # ruined by _col_norm_pinv
+        if thresh is not None:
+            logger.info('    Using %d/%d harmonic components'
+                        % (len(sing), n_in + n_out))
+        pS_ave = pS_ave[:n_in]
         pS_ave *= decomp_coil_scale.T
         # Get mapping matrix
         mapping = np.dot(S_recon, pS_ave)
         # Apply mapping
         data[meg_picks] = np.dot(mapping, data[good_picks])
+    info_to['dev_head_t'] = recon_trans  # set the reconstruction transform
     evoked = epochs._evoked_from_epoch_data(
         data, info_to, picks, count, 'average')
     _remove_meg_projs(evoked)  # remove MEG projectors, they won't apply now

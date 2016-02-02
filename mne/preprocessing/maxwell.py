@@ -368,10 +368,12 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
     reg_moments_0 = reg_moments.copy()
     # Loop through buffer windows of data
     pl = 's' if len(read_lims) != 2 else ''
+    n_sig = int(np.floor(np.log10(max(len(read_lims), 0)))) + 1
     logger.info('    Processing %s data chunk%s of (at least) %0.1f sec'
                 % (len(read_lims) - 1, pl, st_duration))
-    for start, stop in zip(read_lims[:-1], read_lims[1:]):
+    for ii, (start, stop) in enumerate(zip(read_lims[:-1], read_lims[1:])):
         t_str = '% 8.2f - % 8.2f sec' % tuple(raw_sss.times[[start, stop - 1]])
+        t_str += ('(#%d/%d)' % (ii + 1, len(read_lims))).rjust(2 * n_sig + 5)
 
         # Get original data
         orig_data = raw_sss._data[good_picks, start:stop]
@@ -456,6 +458,7 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
         raw_sss._data[pos_picks, start:stop] = out_pos_data
 
     # Update info
+    info['dev_head_t'] = recon_trans  # set the reconstruction transform
     _update_sss_info(raw_sss, origin, int_order, ext_order, len(good_picks),
                      coord_frame, sss_ctc, sss_cal, max_st, reg_moments_0)
     logger.info('[done]')
@@ -470,7 +473,7 @@ def _remove_meg_projs(inst):
     for proj in inst.info['projs']:
         if not any(c in meg_channels for c in proj['data']['col_names']):
             non_meg_proj.append(proj)
-    inst.add_proj(non_meg_proj, remove_existing=True)
+    inst.add_proj(non_meg_proj, remove_existing=True, verbose=False)
 
 
 def _check_destination(destination, info, head_frame):
@@ -727,7 +730,7 @@ def _regularize(regularize, exp, S_decomp, mag_or_fine, verbose=None):
     n_in, n_out = _get_n_moments([int_order, ext_order])
     if regularize is not None and regularize['kind'] == 'svd':
         logger.info('    Computing regularization')
-        S_decomp, pS_decomp, sing = _regularize_svd(
+        pS_decomp, sing, S_decomp = _regularize_svd(
             S_decomp, regularize['min_svd'])
         reg_moments = np.arange(n_in + n_out)
         n_use_in = n_in
@@ -892,7 +895,7 @@ def _col_norm_pinv(x, thresh=None):
         s = s[mask]
         v = v[mask]
         x = np.dot(u * s, v * norm) * norm
-        return x, np.dot(v.T * (1. / s), u.T), s
+        return np.dot(v.T * (1. / s), u.T), s, x
 
 
 def _sq(x):
