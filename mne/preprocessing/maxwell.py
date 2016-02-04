@@ -373,7 +373,8 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
                 % (len(read_lims) - 1, pl, st_duration))
     for ii, (start, stop) in enumerate(zip(read_lims[:-1], read_lims[1:])):
         t_str = '% 8.2f - % 8.2f sec' % tuple(raw_sss.times[[start, stop - 1]])
-        t_str += ('(#%d/%d)' % (ii + 1, len(read_lims))).rjust(2 * n_sig + 5)
+        t_str += ('(#%d/%d)'
+                  % (ii + 1, len(read_lims) - 1)).rjust(2 * n_sig + 5)
 
         # Get original data
         orig_data = raw_sss._data[good_picks, start:stop]
@@ -449,11 +450,10 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
         if st_when == 'after':
             _do_tSSS(out_meg_data, orig_in_data, resid, st_correlation,
                      n_positions, t_str)
-        else:
-            if head_pos[0] is not None:
-                pl = 's' if n_positions > 1 else ''
-                logger.info('        Used % 2d head position%s for %s'
-                            % (n_positions, pl, t_str))
+        elif st_when == 'never' and head_pos[0] is not None:
+            pl = 's' if n_positions > 1 else ''
+            logger.info('        Used % 2d head position%s for %s'
+                        % (n_positions, pl, t_str))
         raw_sss._data[meg_picks, start:stop] = out_meg_data
         raw_sss._data[pos_picks, start:stop] = out_pos_data
 
@@ -592,10 +592,10 @@ def _do_tSSS(clean_data, orig_in_data, resid, st_correlation,
     np.asarray_chkfinite(resid)
     t_proj = _overlap_projector(orig_in_data, resid, st_correlation)
     # Apply projector according to Eq. 12 in [2]_
-    msg = ('        Projecting % 2d intersecting tSSS components '
+    msg = ('        Projecting %2d intersecting tSSS components '
            'for %s' % (t_proj.shape[1], t_str))
     if n_positions > 1:
-        msg += ' (across % 2d positions)' % n_positions
+        msg += ' (across %2d positions)' % n_positions
     logger.info(msg)
     clean_data -= np.dot(np.dot(clean_data, t_proj), t_proj.T)
 
@@ -624,7 +624,8 @@ def _copy_preload_add_channels(raw, add_channels):
             dict(ch_name='CHPI%03d' % (ii + 1), logno=ii + 1,
                  scanno=off + ii + 1, unit_mul=-1, range=1., unit=-1,
                  kind=kinds[ii], coord_frame=FIFF.FIFFV_COORD_UNKNOWN,
-                 cal=1. / 10000., coil_type=FIFF.FWD_COIL_UNKNOWN)
+                 cal=1. / 10000., coil_type=FIFF.FWD_COIL_UNKNOWN,
+                 loc=np.zeros(12))
             for ii in range(len(kinds))]
         raw.info['chs'].extend(chpi_chs)
         raw.info._check_consistency()
