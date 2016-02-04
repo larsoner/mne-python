@@ -1601,10 +1601,10 @@ def _overlap_projector(data_int, data_res, corr):
     # Normalize data, then compute orth to get temporal bases. Matrices
     # must have shape (n_samps x effective_rank) when passed into svd
     # computation
-    n = np.sqrt(np.sum(data_int * data_int))
+    n = np.linalg.norm(data_int)
     Q_int = linalg.qr(_orth_overwrite((data_int / n).T),
                       overwrite_a=True, mode='economic', **check_disable)[0].T
-    n = np.sqrt(np.sum(data_res * data_res))
+    n = np.linalg.norm(data_res)
     Q_res = linalg.qr(_orth_overwrite((data_res / n).T),
                       overwrite_a=True, mode='economic', **check_disable)[0]
     assert data_int.shape[1] > 0
@@ -1941,6 +1941,7 @@ def _trans_sss_basis(exp, all_coils, trans=None, coil_scale=100.):
     if trans is not None:
         if not isinstance(trans, Transform):
             trans = Transform('meg', 'head', trans)
+        assert not np.isnan(trans['trans']).any()
         all_coils = (apply_trans(trans, all_coils[0]),
                      apply_trans(trans, all_coils[1], move=False),
                      ) + all_coils[2:]

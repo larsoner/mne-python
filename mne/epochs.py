@@ -2819,6 +2819,7 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
             use_idx = use_idx[-1]
             trans = np.vstack([np.hstack([rot[use_idx], trn[[use_idx]].T]),
                                [[0., 0., 0., 1.]]])
+        assert not np.isnan(trans).any()
         loc_str = ', '.join('%0.1f' % tr for tr in (trans[:3, 3] * 1000))
         if last_trans is None or not np.allclose(last_trans, trans):
             logger.info('    Processing epoch %s (device location: %s mm)'
