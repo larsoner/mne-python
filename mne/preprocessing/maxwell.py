@@ -99,9 +99,12 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
         as ``--trans default`` would in MaxFilter™ (i.e., to the default
         head location).
     regularize : str | None
-        Basis regularization type, must be "in" or None.
+        Basis regularization type, must be "in", "svd" or None.
         "in" is the same algorithm as the "-regularize in" option in
-        MaxFilter™.
+        MaxFilter™. "svd" (new in v0.12) uses SVD-based regularization by
+        cutting off singular values of the basis matrix below the minimum
+        detectability threshold of an ideal head position (usually near
+        the device origin).
     ignore_ref : bool
         If True, do not include reference channels in compensation. This
         option should be True for KIT files, since Maxwell filtering
@@ -219,7 +222,7 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
 
     _check_raw(raw)
     _check_usable(raw)
-    _check_regularize(regularize)
+    regularize = _check_regularize(regularize)
     st_correlation = float(st_correlation)
     if st_correlation <= 0. or st_correlation > 1.:
         raise ValueError('Need 0 < st_correlation <= 1., got %s'
@@ -266,7 +269,7 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
     sss_cal = dict()
     if calibration is not None:
         calibration, sss_cal = _update_sensor_geometry(info, calibration,
-                                                       head_frame, ignore_ref)
+                                                       ignore_ref)
         mag_or_fine.fill(True)  # all channels now have some mag-type data
 
     # Determine/check the origin of the expansion
@@ -293,8 +296,7 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
     #
     # Translate to destination frame (always use non-fine-cal bases)
     #
-    exp = dict(origin=origin, int_order=int_order, ext_order=0,
-               head_frame=head_frame)
+    exp = dict(origin=origin, int_order=int_order, ext_order=0)
     all_coils = _prep_mf_coils(info, ignore_ref)
     S_recon = _trans_sss_basis(exp, all_coils, recon_trans, coil_scale)
     exp['ext_order'] = ext_order
@@ -340,6 +342,10 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
     # Do the heavy lifting
     #
 
+    # prepare regularization techniques
+    _prep_regularize(regularize, all_coils, calibration, exp, ignore_ref,
+                     coil_scale, grad_picks, mag_picks, mag_or_fine)
+
     # Figure out which transforms we need for each tSSS block
     # (and transform pos[1] to times)
     head_pos[1] = raw_sss.time_as_index(head_pos[1], use_rounding=True)
@@ -362,10 +368,13 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
     reg_moments_0 = reg_moments.copy()
     # Loop through buffer windows of data
     pl = 's' if len(read_lims) != 2 else ''
+    n_sig = int(np.floor(np.log10(max(len(read_lims), 0)))) + 1
     logger.info('    Processing %s data chunk%s of (at least) %0.1f sec'
                 % (len(read_lims) - 1, pl, st_duration))
-    for start, stop in zip(read_lims[:-1], read_lims[1:]):
+    for ii, (start, stop) in enumerate(zip(read_lims[:-1], read_lims[1:])):
         t_str = '% 8.2f - % 8.2f sec' % tuple(raw_sss.times[[start, stop - 1]])
+        t_str += ('(#%d/%d)'
+                  % (ii + 1, len(read_lims) - 1)).rjust(2 * n_sig + 5)
 
         # Get original data
         orig_data = raw_sss._data[good_picks, start:stop]
@@ -441,7 +450,7 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
         if st_when == 'after':
             _do_tSSS(out_meg_data, orig_in_data, resid, st_correlation,
                      n_positions, t_str)
-        else:
+        elif st_when == 'never' and head_pos[0] is not None:
             pl = 's' if n_positions > 1 else ''
             logger.info('        Used % 2d head position%s for %s'
                         % (n_positions, pl, t_str))
@@ -449,6 +458,7 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
         raw_sss._data[pos_picks, start:stop] = out_pos_data
 
     # Update info
+    info['dev_head_t'] = recon_trans  # set the reconstruction transform
     _update_sss_info(raw_sss, origin, int_order, ext_order, len(good_picks),
                      coord_frame, sss_ctc, sss_cal, max_st, reg_moments_0)
     logger.info('[done]')
@@ -463,7 +473,7 @@ def _remove_meg_projs(inst):
     for proj in inst.info['projs']:
         if not any(c in meg_channels for c in proj['data']['col_names']):
             non_meg_proj.append(proj)
-    inst.add_proj(non_meg_proj, remove_existing=True)
+    inst.add_proj(non_meg_proj, remove_existing=True, verbose=False)
 
 
 def _check_destination(destination, info, head_frame):
@@ -582,10 +592,10 @@ def _do_tSSS(clean_data, orig_in_data, resid, st_correlation,
     np.asarray_chkfinite(resid)
     t_proj = _overlap_projector(orig_in_data, resid, st_correlation)
     # Apply projector according to Eq. 12 in [2]_
-    msg = ('        Projecting % 2d intersecting tSSS components '
+    msg = ('        Projecting %2d intersecting tSSS components '
            'for %s' % (t_proj.shape[1], t_str))
     if n_positions > 1:
-        msg += ' (across % 2d positions)' % n_positions
+        msg += ' (across %2d positions)' % n_positions
     logger.info(msg)
     clean_data -= np.dot(np.dot(clean_data, t_proj), t_proj.T)
 
@@ -614,7 +624,8 @@ def _copy_preload_add_channels(raw, add_channels):
             dict(ch_name='CHPI%03d' % (ii + 1), logno=ii + 1,
                  scanno=off + ii + 1, unit_mul=-1, range=1., unit=-1,
                  kind=kinds[ii], coord_frame=FIFF.FIFFV_COORD_UNKNOWN,
-                 cal=1. / 10000., coil_type=FIFF.FWD_COIL_UNKNOWN)
+                 cal=1. / 10000., coil_type=FIFF.FWD_COIL_UNKNOWN,
+                 loc=np.zeros(12))
             for ii in range(len(kinds))]
         raw.info['chs'].extend(chpi_chs)
         raw.info._check_consistency()
@@ -665,29 +676,20 @@ def _check_pos(pos, head_frame, raw, st_fixed):
 def _get_decomp(trans, all_coils, cal, regularize, exp, ignore_ref,
                 coil_scale, grad_picks, mag_picks, good_picks, mag_or_fine,
                 bad_condition, verbose=None):
-    """Helper to get a decomposition matrix"""
+    """Helper to get decomposition and pseudoinverse matrices"""
     #
     # Fine calibration processing (point-like magnetometers and calib. coeffs)
     #
-    S_decomp = _trans_sss_basis(exp, all_coils, trans, coil_scale)
-    if cal is not None:
-        # Compute point-like mags to incorporate gradiometer imbalance
-        cal['grad_cals'] = _sss_basis_point(exp, trans, cal, ignore_ref)
-        # Add point like magnetometer data to bases.
-        S_decomp[grad_picks, :] += cal['grad_cals']
-        # Scale magnetometers by calibration coefficient
-        S_decomp[mag_picks, :] /= cal['mag_cals']
-        # We need to be careful about KIT gradiometers
-    S_decomp = S_decomp[good_picks]
+    S_decomp = _get_s_decomp(exp, all_coils, trans, coil_scale, cal,
+                             ignore_ref, grad_picks, mag_picks, good_picks)
 
     #
     # Regularization
     #
-    reg_moments, n_use_in = _regularize(regularize, exp, S_decomp, mag_or_fine)
-    S_decomp = S_decomp.take(reg_moments, axis=1)
+    S_decomp, pS_decomp, sing, reg_moments, n_use_in = _regularize(
+        regularize, exp, S_decomp, mag_or_fine)
 
     # Pseudo-inverse of total multipolar moment basis set (Part of Eq. 37)
-    pS_decomp, sing = _col_norm_pinv(S_decomp.copy())
     cond = sing[0] / sing[-1]
     logger.debug('    Decomposition matrix condition: %0.1f' % cond)
     if bad_condition != 'ignore' and cond >= 1000.:
@@ -703,30 +705,59 @@ def _get_decomp(trans, all_coils, cal, regularize, exp, ignore_ref,
     return S_decomp, pS_decomp, reg_moments, n_use_in
 
 
-def _regularize(regularize, exp, S_decomp, mag_or_fine):
+def _get_s_decomp(exp, all_coils, trans, coil_scale, cal, ignore_ref,
+                  grad_picks, mag_picks, good_picks):
+    """Helper to get S_decomp"""
+    S_decomp = _trans_sss_basis(exp, all_coils, trans, coil_scale)
+    if cal is not None:
+        # Compute point-like mags to incorporate gradiometer imbalance
+        grad_cals = _sss_basis_point(exp, trans, cal, ignore_ref)
+        # Add point like magnetometer data to bases.
+        S_decomp[grad_picks, :] += grad_cals
+        # Scale magnetometers by calibration coefficient
+        S_decomp[mag_picks, :] /= cal['mag_cals']
+        # We need to be careful about KIT gradiometers
+    S_decomp = S_decomp[good_picks]
+    return S_decomp
+
+
+@verbose
+def _regularize(regularize, exp, S_decomp, mag_or_fine, verbose=None):
     """Regularize a decomposition matrix"""
     # ALWAYS regularize the out components according to norm, since
     # gradiometer-only setups (e.g., KIT) can have zero first-order
     # components
     int_order, ext_order = exp['int_order'], exp['ext_order']
     n_in, n_out = _get_n_moments([int_order, ext_order])
-    if regularize is not None:  # regularize='in'
+    if regularize is not None and regularize['kind'] == 'svd':
         logger.info('    Computing regularization')
-        in_removes, out_removes = _regularize_in(
-            int_order, ext_order, S_decomp, mag_or_fine)
+        pS_decomp, sing, S_decomp = _regularize_svd(
+            S_decomp, regularize['min_svd'])
+        reg_moments = np.arange(n_in + n_out)
+        n_use_in = n_in
+        logger.info('        Using %s/%s harmonic components'
+                    % (len(sing), n_in + n_out))
     else:
-        in_removes = []
-        out_removes = _regularize_out(int_order, ext_order, mag_or_fine)
-    reg_in_moments = np.setdiff1d(np.arange(n_in), in_removes)
-    reg_out_moments = np.setdiff1d(np.arange(n_in, n_in + n_out),
-                                   out_removes)
-    n_use_in = len(reg_in_moments)
-    n_use_out = len(reg_out_moments)
-    if regularize is not None or n_use_out != n_out:
-        logger.info('        Using %s/%s inside and %s/%s outside harmonic '
-                    'components' % (n_use_in, n_in, n_use_out, n_out))
-    reg_moments = np.concatenate((reg_in_moments, reg_out_moments))
-    return reg_moments, n_use_in
+        if regularize is not None:  # regularize='in'
+            logger.info('    Computing regularization')
+            in_removes, out_removes = _regularize_in(
+                int_order, ext_order, S_decomp, mag_or_fine)
+        else:
+            in_removes = []
+            out_removes = _regularize_out(int_order, ext_order, mag_or_fine)
+        reg_in_moments = np.setdiff1d(np.arange(n_in), in_removes)
+        reg_out_moments = np.setdiff1d(np.arange(n_in, n_in + n_out),
+                                       out_removes)
+        n_use_in = len(reg_in_moments)
+        n_use_out = len(reg_out_moments)
+        reg_moments = np.concatenate((reg_in_moments, reg_out_moments))
+        S_decomp = S_decomp.take(reg_moments, axis=1)
+        pS_decomp, sing = _col_norm_pinv(S_decomp.copy())
+        if regularize is not None or n_use_out != n_out:
+            logger.info('        Using %s/%s inside and %s/%s outside '
+                        'harmonic components'
+                        % (n_use_in, n_in, n_use_out, n_out))
+    return S_decomp, pS_decomp, sing, reg_moments, n_use_in
 
 
 def _get_mf_picks(info, int_order, ext_order, ignore_ref=False,
@@ -779,11 +810,16 @@ def _get_mf_picks(info, int_order, ext_order, ignore_ref=False,
             mag_or_fine)
 
 
-def _check_regularize(regularize):
+def _check_regularize(regularize, allowed_str=('in', 'svd')):
     """Helper to ensure regularize is valid"""
-    if not (regularize is None or (isinstance(regularize, string_types) and
-                                   regularize in ('in',))):
-        raise ValueError('regularize must be None or "in"')
+    if regularize is None:
+        return None
+    msg = 'regularize must be ' + ", ".join(allowed_str) + ', or None'
+    if not isinstance(regularize, string_types):
+        raise TypeError(msg)
+    if regularize not in allowed_str:
+        raise ValueError(msg)
+    return dict(kind=regularize)
 
 
 def _check_usable(inst):
@@ -800,7 +836,49 @@ def _check_usable(inst):
                                'might have been compensated.')
 
 
-def _col_norm_pinv(x):
+def _prep_regularize(regularize, all_coils, calibration, exp, ignore_ref,
+                     coil_scale, grad_picks, mag_picks, mag_or_fine):
+    """Helper to prepare for regularization if necessary"""
+    from scipy.optimize import fmin_cobyla
+    if regularize is not None and regularize['kind'] == 'svd':
+        # find min sing val at best location
+        x0 = np.zeros(3)
+
+        def objective(x):
+            return 1. / _get_min_svd(
+                x, all_coils, coil_scale, calibration, ignore_ref,
+                exp, grad_picks, mag_picks, mag_or_fine)
+
+        x_opt = fmin_cobyla(objective, x0, (), rhobeg=1e-2, rhoend=1e-4,
+                            disp=False)
+        min_svd = 1. / objective(x_opt)
+        origin_str = ', '.join('%0.1f' % (1000 * x) for x in x_opt)
+        logger.info('    Found minimum detectable value for regularization: '
+                    '%0.3e (at device origin [%s])' % (min_svd, origin_str))
+        regularize['min_svd'] = min_svd
+
+
+def _get_min_svd(origin, all_coils, coil_scale, calibration, ignore_ref,
+                 exp, grad_picks, mag_picks, mag_or_fine):
+    """Helper objective function"""
+    this_exp = dict(origin=origin, int_order=exp['int_order'],
+                    ext_order=exp['ext_order'],
+                    head_frame=False)
+    # get the decomp matrix at device origin, no regularization
+    S_decomp = _get_s_decomp(
+        this_exp, all_coils, trans=None, coil_scale=coil_scale,
+        cal=calibration, ignore_ref=ignore_ref, grad_picks=grad_picks,
+        mag_picks=mag_picks, good_picks=np.arange(len(coil_scale)))
+    # If we wanted to use the un-regularized data, we'd just do:
+    sing = _col_norm_pinv(S_decomp.copy())[1]
+    # But instead we use "in" regularization to find the actual min detectable
+    # value:
+    S_decomp, sing = _regularize(dict(kind='in'), exp, S_decomp,
+                                 mag_or_fine, verbose=False)[:3:2]
+    return sing[-1]
+
+
+def _col_norm_pinv(x, thresh=None):
     """Compute the pinv with column-normalization to stabilize calculation
 
     Note: will modify/overwrite x.
@@ -810,7 +888,15 @@ def _col_norm_pinv(x):
     u, s, v = linalg.svd(x, full_matrices=False, overwrite_a=True,
                          **check_disable)
     v /= norm
-    return np.dot(v.T * 1. / s, u.T), s
+    if thresh is None:
+        return np.dot(v.T * 1. / s, u.T), s
+    else:
+        mask = (s >= thresh)
+        u = u[:, mask]
+        s = s[mask]
+        v = v[mask]
+        x = np.dot(u * s, v * norm) * norm
+        return np.dot(v.T * (1. / s), u.T), s, x
 
 
 def _sq(x):
@@ -1516,10 +1602,10 @@ def _overlap_projector(data_int, data_res, corr):
     # Normalize data, then compute orth to get temporal bases. Matrices
     # must have shape (n_samps x effective_rank) when passed into svd
     # computation
-    n = np.sqrt(np.sum(data_int * data_int))
+    n = np.linalg.norm(data_int)
     Q_int = linalg.qr(_orth_overwrite((data_int / n).T),
                       overwrite_a=True, mode='economic', **check_disable)[0].T
-    n = np.sqrt(np.sum(data_res * data_res))
+    n = np.linalg.norm(data_res)
     Q_res = linalg.qr(_orth_overwrite((data_res / n).T),
                       overwrite_a=True, mode='economic', **check_disable)[0]
     assert data_int.shape[1] > 0
@@ -1570,7 +1656,7 @@ def _read_fine_cal(fine_cal):
     return cal_chs, cal_ch_numbers
 
 
-def _update_sensor_geometry(info, fine_cal, head_frame, ignore_ref):
+def _update_sensor_geometry(info, fine_cal, ignore_ref):
     """Helper to replace sensor geometry information and reorder cal_chs"""
     logger.info('    Using fine calibration %s' % op.basename(fine_cal))
     cal_chs, cal_ch_numbers = _read_fine_cal(fine_cal)
@@ -1802,6 +1888,11 @@ def _regularize_in(int_order, ext_order, S_decomp, mag_or_fine):
     return in_removes, out_removes
 
 
+def _regularize_svd(S_decomp, min_svd):
+    """Regularize basis set using SVD thresholding"""
+    return _col_norm_pinv(S_decomp.copy(), min_svd)
+
+
 def _compute_sphere_activation_in(degrees):
     """Helper to compute the "in" power from random currents in a sphere
 
@@ -1851,6 +1942,7 @@ def _trans_sss_basis(exp, all_coils, trans=None, coil_scale=100.):
     if trans is not None:
         if not isinstance(trans, Transform):
             trans = Transform('meg', 'head', trans)
+        assert not np.isnan(trans['trans']).any()
         all_coils = (apply_trans(trans, all_coils[0]),
                      apply_trans(trans, all_coils[1], move=False),
                      ) + all_coils[2:]

@@ -2657,8 +2657,8 @@ def concatenate_epochs(epochs_list):
 @verbose
 def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
                       origin='auto', weight_all=True, int_order=8, ext_order=3,
-                      destination=None, ignore_ref=False, return_mapping=False,
-                      pos=None, verbose=None):
+                      destination=None, regularize=None, ignore_ref=False,
+                      return_mapping=False, pos=None, verbose=None):
     """Average data using Maxwell filtering, transforming using head positions
 
     Parameters
@@ -2701,6 +2701,15 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
         For example, ``destination=(0, 0, 0.04)`` would translate the bases
         as ``--trans default`` would in MaxFilter™ (i.e., to the default
         head location).
+
+        .. versionadded:: 0.12
+
+    regularize : str | None
+        Basis regularization type, must be "svd" or None ("in" method not
+        supported for this method). "svd" uses SVD-based regularization by
+        cutting off singular values of the basis matrix below the minimum
+        detectability threshold of an ideal head position (usually near
+        the device origin).
 
         .. versionadded:: 0.12
 
@@ -2750,7 +2759,9 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
                                         _check_usable, _col_norm_pinv,
                                         _get_n_moments, _get_mf_picks,
                                         _prep_mf_coils, _check_destination,
-                                        _remove_meg_projs)
+                                        _check_regularize, _prep_regularize,
+                                        _regularize, _remove_meg_projs)
+    regularize = _check_regularize(regularize, ('svd',))
     if pos is not None:
         head_pos = pos
         warnings.warn('pos has been replaced by head_pos and will be removed '
@@ -2775,7 +2786,7 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
                 % (len(epochs.events)))
     if not np.array_equal(epochs.events[:, 0], np.unique(epochs.events[:, 0])):
         raise RuntimeError('Epochs must have monotonically increasing events')
-    meg_picks, _, _, good_picks, coil_scale, _ = \
+    meg_picks, mag_picks, grad_picks, good_picks, coil_scale, mag_or_fine = \
         _get_mf_picks(epochs.info, int_order, ext_order, ignore_ref)
     n_channels, n_times = len(epochs.ch_names), len(epochs.times)
     other_picks = np.setdiff1d(np.arange(n_channels), meg_picks)
@@ -2796,6 +2807,9 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
     decomp_coil_scale = coil_scale[good_picks]
     exp = dict(int_order=int_order, ext_order=ext_order, head_frame=True,
                origin=origin)
+    # prepare regularization techniques
+    _prep_regularize(regularize, all_coils_recon, None, exp, ignore_ref,
+                     coil_scale, grad_picks, mag_picks, mag_or_fine)
     for ei, epoch in enumerate(epochs):
         event_time = epochs.events[epochs._current - 1, 0] / orig_sfreq
         use_idx = np.where(t <= event_time)[0]
@@ -2805,6 +2819,7 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
             use_idx = use_idx[-1]
             trans = np.vstack([np.hstack([rot[use_idx], trn[[use_idx]].T]),
                                [[0., 0., 0., 1.]]])
+        assert not np.isnan(trans).any()
         loc_str = ', '.join('%0.1f' % tr for tr in (trans[:3, 3] * 1000))
         if last_trans is None or not np.allclose(last_trans, trans):
             logger.info('    Processing epoch %s (device location: %s mm)'
@@ -2819,9 +2834,12 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
         if not reuse:
             S = _trans_sss_basis(exp, all_coils, trans,
                                  coil_scale=decomp_coil_scale)
+            # XXX Eventually we could do cross-talk and fine-cal here
+            if regularize is not None:
+                S = _regularize(regularize, exp, S, mag_or_fine,
+                                verbose=False)[0]
             # Get the weight from the un-regularized version
             weight = np.sqrt(np.sum(S * S))  # frobenius norm (eq. 44)
-            # XXX Eventually we could do cross-talk and fine-cal here
             S *= weight
         S_decomp += S  # eq. 41
         epoch[slice(None) if weight_all else meg_picks] *= weight
@@ -2849,12 +2867,19 @@ def average_movements(epochs, head_pos=None, orig_sfreq=None, picks=None,
         # so we do not provide the option here.
         S_recon /= coil_scale
         # Invert
-        pS_ave = _col_norm_pinv(S_decomp)[0][:n_in]
+        thresh = regularize['min_svd'] if regularize is not None else None
+        pS_ave, sing = _col_norm_pinv(S_decomp, thresh=thresh)[:2]
+        del S_decomp  # ruined by _col_norm_pinv
+        if thresh is not None:
+            logger.info('    Using %d/%d harmonic components'
+                        % (len(sing), n_in + n_out))
+        pS_ave = pS_ave[:n_in]
         pS_ave *= decomp_coil_scale.T
         # Get mapping matrix
         mapping = np.dot(S_recon, pS_ave)
         # Apply mapping
         data[meg_picks] = np.dot(mapping, data[good_picks])
+    info_to['dev_head_t'] = recon_trans  # set the reconstruction transform
     evoked = epochs._evoked_from_epoch_data(
         data, info_to, picks, count, 'average')
     _remove_meg_projs(evoked)  # remove MEG projectors, they won't apply now
