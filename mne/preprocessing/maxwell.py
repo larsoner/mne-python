@@ -10,6 +10,12 @@ from functools import partial
 from math import factorial
 from os import path as op
 
+# Todo:
+# Change to use _check_lims
+# Change to use _Interp2
+# Fix logging messages
+# Speed up by only doing necessary calculations?
+
 import numpy as np
 from scipy import linalg
 
@@ -20,6 +26,7 @@ from ..transforms import (_str_to_frame, _get_trans, Transform, apply_trans,
                           _find_vector_rotation, _cart_to_sph, _get_n_moments,
                           _sph_to_cart_partials, _deg_ord_idx,
                           _sh_complex_to_real, _sh_real_to_complex, _sh_negate)
+from ..filter import _COLA, _Interp2, _Storer
 from ..forward import _concatenate_coils, _prep_meg_channels, _create_meg_coils
 from ..surface import _normalize_vectors
 from ..io.constants import FIFF
@@ -45,7 +52,7 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
                    st_correlation=0.98, coord_frame='head', destination=None,
                    regularize='in', ignore_ref=False, bad_condition='error',
                    head_pos=None, st_fixed=True, st_only=False, mag_scale=100.,
-                   verbose=None):
+                   st_overlap=None, st_detrend=False, verbose=None):
     u"""Apply Maxwell filter to data using multipole moments.
 
     .. warning:: Automatic bad channel detection is not currently implemented.
@@ -148,6 +155,19 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
         59.5 for VectorView).
 
         .. versionadded:: 0.13
+
+    st_overlap : bool
+        If True (default in 0.16), tSSS processing will use a constant
+        overlap-add method. If False (default in 0.15), then
+        non-overlapping windows will be used.
+
+        .. versionadded:: 0.17
+
+    st_detrend : bool
+        If True, detrend data and residual before performing subspace
+        correlation (default False).
+
+        .. versionadded:: 0.17
 
     verbose : bool, str, int, or None
         If not None, override default verbose level (see :func:`mne.verbose`
@@ -301,8 +321,15 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
                            'coord_frame="meg"')
     if st_only and st_duration is None:
         raise ValueError('st_duration must not be None if st_only is True')
-    head_pos = _check_pos(head_pos, head_frame, raw, st_fixed,
-                          raw.info['sfreq'])
+    if st_overlap is None:
+        warn('st_overlap defaults to False in 0.16 but will change to True '
+             'in 0.17. Set it explicitly to avoid this warning.',
+             DeprecationWarning)
+        st_overlap = False
+    mc = _MoveComp(head_pos, head_frame, raw)
+    if len(mc.pos[0]) > 1 and not st_fixed:
+        warn('st_fixed=False is untested, use with caution!')
+    head_pos = _check_pos(head_pos, head_frame, raw)
     _check_info(raw.info, sss=not st_only, tsss=st_duration is not None,
                 calibration=not st_only and calibration is not None,
                 ctc=not st_only and cross_talk is not None)
@@ -384,45 +411,52 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
             warn('Head position change is over 25 mm (%s) = %0.1f mm'
                  % (', '.join('%0.1f' % x for x in diff), dist))
 
-    # Reconstruct raw file object with spatiotemporal processed data
+    # Generate read limits
+    step = min(int(round(raw_sss.info['buffer_size_sec'] *
+                         raw_sss.info['sfreq'])), len(raw_sss.times))
+
+    #
+    # Determine tSSS parameters
+    #
     max_st = dict()
     if st_duration is not None:
         max_st.update(job=10, subspcorr=st_correlation,
                       buflen=st_duration / info['sfreq'])
         logger.info('    Processing data using tSSS with st_duration=%s'
                     % max_st['buflen'])
-        st_when = 'before' if st_fixed else 'after'  # relative to movecomp
     else:
         # st_duration from here on will act like the chunk size
-        st_duration = max(int(round(10. * info['sfreq'])), 1)
+        st_duration = step
         st_correlation = None
-        st_when = 'never'
-    st_duration = min(len(raw_sss.times), st_duration)
-    del st_fixed
 
-    # Generate time points to break up data into equal-length windows
-    read_lims = np.arange(0, len(raw_sss.times) + 1, st_duration)
-    if len(read_lims) == 1:
-        read_lims = np.concatenate([read_lims, [len(raw_sss.times)]])
-    if read_lims[-1] != len(raw_sss.times):
-        read_lims[-1] = len(raw_sss.times)
-        # len_last_buf < st_dur so fold it into the previous buffer
-        if st_correlation is not None and len(read_lims) > 2:
-            logger.info('    Spatiotemporal window did not fit evenly into '
-                        'raw object. The final %0.2f seconds were lumped '
-                        'onto the previous window.'
-                        % ((read_lims[-1] - read_lims[-2] - st_duration) /
-                           info['sfreq'],))
-    assert len(read_lims) >= 2
-    assert read_lims[0] == 0 and read_lims[-1] == len(raw_sss.times)
+    if st_overlap:
+        n_overlap = st_duration // 2
+        window = 'hann'
+    else:
+        n_overlap = 0
+        window = 'boxcar'
+
+    # st_fixed mode (or pass-through)
+    these_picks = meg_picks if st_only else meg_picks[good_picks]
+    use_correlation = st_correlation if st_fixed else None
+    tsss_pre = _COLA(partial(_do_tSSS, st_correlation=use_correlation,
+                             st_detrend=st_detrend),
+                     _Storer(raw_sss._data, picks=these_picks),
+                     len(raw_sss.times), st_duration, n_overlap,
+                     raw_sss.info['sfreq'], window)
+
+    # st_fixed is False (or pass-through)
+    use_correlation = None if st_fixed else st_correlation
+    tsss_post = _COLA(partial(_do_tSSS, st_correlation=use_correlation,
+                              st_detrend=st_detrend),
+                      _Storer(raw_sss._data, picks=meg_picks),
+                      len(raw_sss.times), st_duration, n_overlap,
+                      raw_sss.info['sfreq'], window)
 
     #
     # Do the heavy lifting
     #
 
-    # Figure out which transforms we need for each tSSS block
-    # (and transform pos[1] to times)
-    head_pos[1] = raw_sss.time_as_index(head_pos[1], use_rounding=True)
     # Compute the first bit of pos_data for cHPI reporting
     if info['dev_head_t'] is not None and head_pos[0] is not None:
         this_pos_quat = np.concatenate([
@@ -431,122 +465,188 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
             np.zeros(3)])
     else:
         this_pos_quat = None
-    _get_this_decomp_trans = partial(
+    get_this_decomp_trans = partial(
         _get_decomp, all_coils=all_coils,
         cal=calibration, regularize=regularize,
         exp=exp, ignore_ref=ignore_ref, coil_scale=coil_scale,
         grad_picks=grad_picks, mag_picks=mag_picks, good_picks=good_picks,
         mag_or_fine=mag_or_fine, bad_condition=bad_condition,
         mag_scale=mag_scale)
-    S_decomp, pS_decomp, reg_moments, n_use_in = _get_this_decomp_trans(
-        info['dev_head_t'], t=0.)
-    reg_moments_0 = reg_moments.copy()
-    # Loop through buffer windows of data
-    n_sig = int(np.floor(np.log10(max(len(read_lims), 0)))) + 1
-    logger.info('    Processing %s data chunk%s of (at least) %0.1f sec'
-                % (len(read_lims) - 1, _pl(read_lims),
-                   st_duration / info['sfreq']))
-    for ii, (start, stop) in enumerate(zip(read_lims[:-1], read_lims[1:])):
-        rel_times = raw_sss.times[start:stop]
-        t_str = '%8.3f - %8.3f sec' % tuple(rel_times[[0, -1]])
-        t_str += ('(#%d/%d)'
-                  % (ii + 1, len(read_lims) - 1)).rjust(2 * n_sig + 5)
+    mc.initialize(get_this_decomp_trans, info['dev_head_t'], S_recon)
 
-        # Get original data
+    # First pass: cross_talk, st_fixed=True
+    for ii, (start, stop) in enumerate(zip(tsss_pre.starts, tsss_pre.stops)):
         orig_data = raw_sss._data[meg_picks[good_picks], start:stop]
-        # This could just be np.empty if not st_only, but shouldn't be slow
-        # this way so might as well just always take the original data
-        out_meg_data = raw_sss._data[meg_picks, start:stop]
-        # Apply cross-talk correction
         if cross_talk is not None:
             orig_data = ctc.dot(orig_data)
-        out_pos_data = np.empty((len(pos_picks), stop - start))
+        # Apply the average transform and feed data to the tSSS pre-mc
+        # operator, which will pass its results to the right place
+        in_data, resid, n_positions = mc.feed_avg(orig_data)
+        proc = raw_sss._data[meg_picks, start:stop] if st_only else orig_data
+        t_str = '%8.3f - %8.3f sec' % tuple(raw_sss.times[[start, stop - 1]])
+        tsss_pre.feed(proc, in_data, resid,
+                      n_positions=n_positions, t_str=t_str)
 
-        # Figure out which positions to use
-        t_s_s_q_a = _trans_starts_stops_quats(head_pos, start, stop,
-                                              this_pos_quat)
-        n_positions = len(t_s_s_q_a[0])
-
-        # Set up post-tSSS or do pre-tSSS
-        if st_correlation is not None:
-            # If doing tSSS before movecomp...
-            resid = orig_data.copy()  # to be safe let's operate on a copy
-            if st_when == 'after':
-                orig_in_data = np.empty((len(meg_picks), stop - start))
-            else:  # 'before'
-                avg_trans = t_s_s_q_a[-1]
-                if avg_trans is not None:
-                    # if doing movecomp
-                    S_decomp_st, pS_decomp_st, _, n_use_in_st = \
-                        _get_this_decomp_trans(avg_trans, t=rel_times[0])
-                else:
-                    S_decomp_st, pS_decomp_st = S_decomp, pS_decomp
-                    n_use_in_st = n_use_in
-                orig_in_data = np.dot(np.dot(S_decomp_st[:, :n_use_in_st],
-                                             pS_decomp_st[:n_use_in_st]),
-                                      resid)
-                resid -= np.dot(np.dot(S_decomp_st[:, n_use_in_st:],
-                                       pS_decomp_st[n_use_in_st:]), resid)
-                resid -= orig_in_data
-                # Here we operate on our actual data
-                proc = out_meg_data if st_only else orig_data
-                _do_tSSS(proc, orig_in_data, resid, st_correlation,
-                         n_positions, t_str)
-
-        if not st_only or st_when == 'after':
-            # Do movement compensation on the data
-            for trans, rel_start, rel_stop, this_pos_quat in \
-                    zip(*t_s_s_q_a[:4]):
-                # Recalculate bases if necessary (trans will be None iff the
-                # first position in this interval is the same as last of the
-                # previous interval)
-                if trans is not None:
-                    S_decomp, pS_decomp, reg_moments, n_use_in = \
-                        _get_this_decomp_trans(trans, t=rel_times[rel_start])
-
-                # Determine multipole moments for this interval
-                mm_in = np.dot(pS_decomp[:n_use_in],
-                               orig_data[:, rel_start:rel_stop])
-
-                # Our output data
-                if not st_only:
-                    out_meg_data[:, rel_start:rel_stop] = \
-                        np.dot(S_recon.take(reg_moments[:n_use_in], axis=1),
-                               mm_in)
-                if len(pos_picks) > 0:
-                    out_pos_data[:, rel_start:rel_stop] = \
-                        this_pos_quat[:, np.newaxis]
-
-                # Transform orig_data to store just the residual
-                if st_when == 'after':
-                    # Reconstruct data using original location from external
-                    # and internal spaces and compute residual
-                    rel_resid_data = resid[:, rel_start:rel_stop]
-                    orig_in_data[:, rel_start:rel_stop] = \
-                        np.dot(S_decomp[:, :n_use_in], mm_in)
-                    rel_resid_data -= np.dot(np.dot(S_decomp[:, n_use_in:],
-                                                    pS_decomp[n_use_in:]),
-                                             rel_resid_data)
-                    rel_resid_data -= orig_in_data[:, rel_start:rel_stop]
-
-        # If doing tSSS at the end
-        if st_when == 'after':
-            _do_tSSS(out_meg_data, orig_in_data, resid, st_correlation,
-                     n_positions, t_str)
-        elif st_when == 'never' and head_pos[0] is not None:
-            logger.info('        Used % 2d head position%s for %s'
-                        % (n_positions, _pl(n_positions), t_str))
-        raw_sss._data[meg_picks, start:stop] = out_meg_data
-        raw_sss._data[pos_picks, start:stop] = out_pos_data
+    # Second pass: movement compensation, st_fixed=False
+    read_lims = list(range(0, len(raw_sss.times), step)) + [len(raw_sss.times)]
+    for ii, (start, stop) in enumerate(zip(read_lims[:-1], read_lims[1:])):
+        data, orig_in_data, resid, pos_data, n_positions = mc.feed(
+            raw_sss._data[meg_picks, start:stop], good_picks,
+            head_pos, this_pos_quat, st_only)
+        raw_sss._data[meg_picks, start:stop] = data
+        if len(pos_picks) > 0:
+            raw_sss._data[pos_picks, start:stop] = pos_data
+        tsss_post.feed(
+            raw_sss._data[meg_picks, start:stop], orig_in_data, resid,
+            n_positions=n_positions, t_str=t_str)
 
     # Update info
     if not st_only:
         info['dev_head_t'] = recon_trans  # set the reconstruction transform
     _update_sss_info(raw_sss, origin, int_order, ext_order, len(good_picks),
-                     coord_frame, sss_ctc, sss_cal, max_st, reg_moments_0,
+                     coord_frame, sss_ctc, sss_cal, max_st, mc.reg_moments_0,
                      st_only)
     logger.info('[done]')
     return raw_sss
+
+
+def _check_pos_2(pos, head_frame, raw):
+    """Check for a valid pos array and transform it to a more usable form."""
+    if pos is None:
+        pos = np.empty((0, 10))
+    elif not head_frame:
+        raise ValueError('positions can only be used if coord_frame="head"')
+    if not isinstance(pos, np.ndarray):
+        raise TypeError('pos must be an ndarray')
+    if pos.ndim != 2 or pos.shape[1] != 10:
+        raise ValueError('pos must be an array of shape (N, 10)')
+    t = pos[:, 0]
+    t_off = raw.first_samp / raw.info['sfreq']
+    if not np.array_equal(t, np.unique(t)):
+        raise ValueError('Time points must unique and in ascending order')
+    if len(pos) > 0:
+        # We need an extra 1e-3 (1 ms) here because MaxFilter outputs values
+        # only out to 3 decimal places
+        if not _time_mask(t, tmin=t_off - 1e-3, tmax=None,
+                          sfreq=raw.info['sfreq']).all():
+            raise ValueError('Head position time points must be greater than '
+                             'first sample offset, but found %0.4f < %0.4f'
+                             % (t[0], t_off))
+        max_dist = np.sqrt(np.sum(pos[:, 4:7] ** 2, axis=1)).max()
+        if max_dist > 1.:
+            warn('Found a distance greater than 1 m (%0.3g m) from the device '
+                 'origin, positions may be invalid and Maxwell filtering '
+                 'could fail' % (max_dist,))
+    # Prepend the existing dev_head_t to make movecomp easier
+    t = np.concatenate([[-1. / raw.info['sfreq']], t - t_off])
+    trans = raw.info['dev_head_t']['trans'] if head_frame else np.eye(4)
+    dev_head_pos = np.concatenate([t[[0]], rot_to_quat(trans[:3, :3]),
+                                   trans[:3, 3], [0, 0, 0]])
+    pos = np.concatenate([dev_head_pos[np.newaxis], pos])
+    dev_head_ts = np.zeros((len(t), 4, 4))
+    dev_head_ts[:, 3, 3] = 1.
+    dev_head_ts[:, :3, 3] = pos[:, 4:7]
+    dev_head_ts[:, :3, :3] = quat_to_rot(pos[:, 1:4])
+    t = raw.time_as_index(t, use_rounding=True)
+    assert t[0] == -1
+    pos = [dev_head_ts, t, pos[:, 1:]]
+    assert all(len(p) == len(pos[0]) for p in pos)
+    return pos
+
+
+class _MoveComp(object):
+    """Perform movement compensation."""
+
+    def __init__(self, pos, head_frame, raw):
+        self.pos = _check_pos_2(pos, head_frame, raw)
+
+    def initialize(self, get_decomp, dev_head_t, S_recon):
+        """Secondary initialization."""
+        self.S_decomp, self.pS_decomp, self.reg_moments, self.n_use_in = \
+            get_decomp(dev_head_t, t=0.)
+        self.S_recon = S_recon
+        self.reg_moments_0 = self.reg_moments.copy()
+        self.offset = 0
+        self.get_decomp = get_decomp
+        # For the average passes
+        self.last_avg_quat = np.nan * np.ones(6)
+        self.avg_offset = 0
+
+    def feed_avg(self, good_data):
+        """Apply an average transformation over the next interval."""
+        start = self.avg_offset
+        stop = start + good_data.shape[1]
+        pos_idx = np.arange(np.where(self.pos[1] <= start)[0][-1],
+                            np.where(self.pos[1] < stop)[0][-1] + 1)
+        used = np.zeros(stop - start, bool)
+        weights = np.zeros(len(pos_idx))
+        for ti in range(len(pos_idx)):
+            # first iteration for this block of data
+            rel_start = 0 if ti == 0 else self.pos[1][pos_idx[ti]] - start
+            if ti == len(pos_idx) - 1:
+                rel_stop = stop - start
+            else:
+                rel_stop = self.pos[1][pos_idx[ti + 1]] - start
+            used[rel_start:rel_stop] = True
+            weights[ti] = rel_stop - rel_start
+        assert used.all()
+        weights /= stop - start
+        avg_quat = np.dot(weights, self.pos[2][pos_idx][:, :6])
+        if not np.allclose(avg_quat, self.last_avg_quat, atol=1e-7):
+            self.last_avg_quat = avg_quat
+            avg_trans = np.vstack([
+                np.hstack([quat_to_rot(avg_quat[:3]),
+                           avg_quat[3:][:, np.newaxis]]),
+                [[0., 0., 0., 1.]]])
+            S_decomp_st, pS_decomp_st, _, n_use_in_st = \
+                self.get_decomp(avg_trans, t=0.)
+            self.op_in = np.dot(S_decomp_st[:, :n_use_in_st],
+                                pS_decomp_st[:n_use_in_st])
+            self.op_resid = np.eye(len(self.op_in)) - self.op_in - np.dot(
+                S_decomp_st[:, n_use_in_st:],
+                pS_decomp_st[n_use_in_st:])
+        in_data = np.dot(self.op_in, good_data)
+        resid = np.dot(self.op_resid, good_data)
+        self.avg_offset += stop - start
+        return in_data, resid, len(pos_idx)
+
+    def feed(self, data, good_picks, head_pos, this_pos_quat, st_only):
+        start = self.offset
+        stop = start + data.shape[1]
+        resid = np.empty((len(good_picks), stop - start))
+        in_data = np.empty((len(good_picks), stop - start))
+        pos_data = np.zeros((9, stop - start))
+        # Do movement compensation on the data
+        t_s_s_q_a = _trans_lims(head_pos, start, stop, this_pos_quat)
+        for trans, rel_start, rel_stop, this_pos_quat in \
+                zip(*t_s_s_q_a[:4]):
+            # Recalculate bases if necessary (trans will be None iff the
+            # first position in this interval is the same as last of the
+            # previous interval)
+            good_data = data[good_picks, rel_start:rel_stop]
+            if trans is not None:
+                self.S_decomp, self.pS_decomp, self.reg_moments, \
+                    self.n_use_in = self.get_decomp(trans, t=0.)
+            # Our output data
+            if not st_only:
+                S_recon_reg = self.S_recon.take(
+                    self.reg_moments[:self.n_use_in], axis=1)
+                sss_op = np.dot(S_recon_reg, self.pS_decomp[:self.n_use_in])
+                data[:, rel_start:rel_stop] = np.dot(sss_op, good_data)
+            if this_pos_quat is not None:
+                pos_data[:, rel_start:rel_stop] = this_pos_quat[:, np.newaxis]
+
+            # Reconstruct data using original location from external
+            # and internal spaces and compute residual
+            op_in = np.dot(self.S_decomp[:, :self.n_use_in],
+                           self.pS_decomp[:self.n_use_in])
+            op_resid = np.eye(len(op_in)) - op_in - np.dot(
+                self.S_decomp[:, self.n_use_in:],
+                self.pS_decomp[self.n_use_in:])
+            in_data[:, rel_start:rel_stop] = np.dot(op_in, good_data)
+            resid[:, rel_start:rel_stop] = np.dot(op_resid, good_data)
+        self.offset += stop - start
+        return data, in_data, resid, pos_data, len(t_s_s_q_a[0])
 
 
 def _get_coil_scale(meg_picks, mag_picks, grad_picks, mag_scale, info):
@@ -650,27 +750,24 @@ def _prep_mf_coils(info, ignore_ref=True):
     return rmags, cosmags, bins, n_coils, mag_mask, slice_map
 
 
-def _trans_starts_stops_quats(pos, start, stop, this_pos_data):
+def _trans_lims(pos, start, stop, this_pos_data):
     """Get all trans and limits we need."""
-    pos_idx = np.arange(*np.searchsorted(pos[1], [start, stop]))
+    pos_idx = np.where((pos[1] >= start) & (pos[1] < stop))[0]
     used = np.zeros(stop - start, bool)
     trans = list()
     rel_starts = list()
     rel_stops = list()
     quats = list()
-    if this_pos_data is None:
-        avg_trans = None
-    else:
-        avg_trans = np.zeros(6)
+    avg_trans = None if this_pos_data is None else np.zeros(6)
     for ti in range(-1, len(pos_idx)):
         # first iteration for this block of data
         if ti < 0:
             rel_start = 0
             rel_stop = pos[1][pos_idx[0]] if len(pos_idx) > 0 else stop
             rel_stop = rel_stop - start
+            # Don't calculate S_decomp here, use the last one
             if rel_start == rel_stop:
                 continue  # our first pos occurs on first time sample
-            # Don't calculate S_decomp here, use the last one
             trans.append(None)  # meaning: use previous
             quats.append(this_pos_data)
         else:
@@ -688,7 +785,7 @@ def _trans_starts_stops_quats(pos, start, stop, this_pos_data):
         used[rel_start:rel_stop] = True
         rel_starts.append(rel_start)
         rel_stops.append(rel_stop)
-        if this_pos_data is not None:
+        if avg_trans is not None:
             avg_trans += quats[-1][:6] * (rel_stop - rel_start)
     assert used.all()
     # Use weighted average for average trans over the window
@@ -701,11 +798,15 @@ def _trans_starts_stops_quats(pos, start, stop, this_pos_data):
     return trans, rel_starts, rel_stops, quats, avg_trans
 
 
-def _do_tSSS(clean_data, orig_in_data, resid, st_correlation,
+def _do_tSSS(clean_data, orig_in_data, resid, st_correlation, st_detrend,
              n_positions, t_str):
     """Compute and apply SSP-like projection vectors based on min corr."""
+    if st_correlation is None:
+        # pass-through mode
+        return (clean_data,)
     np.asarray_chkfinite(resid)
-    t_proj = _overlap_projector(orig_in_data, resid, st_correlation)
+    t_proj = _overlap_projector(orig_in_data, resid, st_correlation,
+                                st_detrend)
     # Apply projector according to Eq. 12 in [2]_
     msg = ('        Projecting %2d intersecting tSSS component%s '
            'for %s' % (t_proj.shape[1], _pl(t_proj.shape[1], ' '), t_str))
@@ -714,6 +815,7 @@ def _do_tSSS(clean_data, orig_in_data, resid, st_correlation,
                                              _pl(n_positions, ' '))
     logger.info(msg)
     clean_data -= np.dot(np.dot(clean_data, t_proj), t_proj.T)
+    return (clean_data,)
 
 
 def _copy_preload_add_channels(raw, add_channels):
@@ -759,14 +861,12 @@ def _copy_preload_add_channels(raw, add_channels):
         return raw, np.array([], int)
 
 
-def _check_pos(pos, head_frame, raw, st_fixed, sfreq):
+def _check_pos(pos, head_frame, raw):
     """Check for a valid pos array and transform it to a more usable form."""
     if pos is None:
         return [None, np.array([-1])]
     if not head_frame:
         raise ValueError('positions can only be used if coord_frame="head"')
-    if not st_fixed:
-        warn('st_fixed=False is untested, use with caution!')
     if not isinstance(pos, np.ndarray):
         raise TypeError('pos must be an ndarray')
     if pos.ndim != 2 or pos.shape[1] != 10:
@@ -777,7 +877,8 @@ def _check_pos(pos, head_frame, raw, st_fixed, sfreq):
         raise ValueError('Time points must unique and in ascending order')
     # We need an extra 1e-3 (1 ms) here because MaxFilter outputs values
     # only out to 3 decimal places
-    if not _time_mask(t, tmin=t_off - 1e-3, tmax=None, sfreq=sfreq).all():
+    if not _time_mask(t, tmin=t_off - 1e-3, tmax=None,
+                      sfreq=raw.info['sfreq']).all():
         raise ValueError('Head position time points must be greater than '
                          'first sample offset, but found %0.4f < %0.4f'
                          % (t[0], t_off))
@@ -790,7 +891,8 @@ def _check_pos(pos, head_frame, raw, st_fixed, sfreq):
     dev_head_ts[:, 3, 3] = 1.
     dev_head_ts[:, :3, 3] = pos[:, 4:7]
     dev_head_ts[:, :3, :3] = quat_to_rot(pos[:, 1:4])
-    pos = [dev_head_ts, t - t_off, pos[:, 1:]]
+    t = raw.time_as_index(t - t_off, use_rounding=True)
+    pos = [dev_head_ts, t, pos[:, 1:]]
     return pos
 
 
@@ -1465,7 +1567,7 @@ def _orth_overwrite(A):
     return u[:, :num]
 
 
-def _overlap_projector(data_int, data_res, corr):
+def _overlap_projector(data_int, data_res, corr, detrend=False):
     """Calculate projector for removal of subspace intersection in tSSS."""
     # corr necessary to deal with noise when finding identical signal
     # directions in the subspace. See the end of the Results section in [2]_
@@ -1480,13 +1582,20 @@ def _overlap_projector(data_int, data_res, corr):
     # computation
 
     # we use np.linalg.norm instead of sp.linalg.norm here: ~2x faster!
-    n = np.linalg.norm(data_int)
-    Q_int = linalg.qr(_orth_overwrite((data_int / n).T),
-                      overwrite_a=True, mode='economic', **check_disable)[0].T
-    n = np.linalg.norm(data_res)
-    Q_res = linalg.qr(_orth_overwrite((data_res / n).T),
-                      overwrite_a=True, mode='economic', **check_disable)[0]
     assert data_int.shape[1] > 0
+    data_int = data_int.copy()
+    if detrend:
+        data_int -= data_int.mean(axis=-1, keepdims=True)
+    data_int /= np.linalg.norm(data_int)
+    Q_int = linalg.qr(_orth_overwrite(data_int.T),
+                      overwrite_a=True, mode='economic', **check_disable)[0].T
+    del data_int
+    data_res = data_res.copy()
+    if detrend:
+        data_res -= data_res.mean(axis=-1, keepdims=True)
+    data_res /= np.linalg.norm(data_res)
+    Q_res = linalg.qr(_orth_overwrite(data_res.T),
+                      overwrite_a=True, mode='economic', **check_disable)[0]
     C_mat = np.dot(Q_int, Q_res)
     del Q_int
 

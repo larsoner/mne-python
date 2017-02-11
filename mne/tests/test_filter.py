@@ -14,14 +14,14 @@ from mne.io import RawArray, read_raw_fif
 from mne.filter import (filter_data, resample, _resample_stim_channels,
                         construct_iir_filter, notch_filter, detrend,
                         _overlap_add_filter, _smart_pad, design_mne_c_filter,
-                        estimate_ringing_samples, create_filter, _Interp2)
+                        estimate_ringing_samples, create_filter, _Interp2,
+                        _Storer, _COLA)
 
 from mne.utils import (sum_squared, run_tests_if_main,
                        catch_logging, requires_version, _TempDir,
                        requires_mne, run_subprocess)
 
 warnings.simplefilter('always')  # enable b/c these tests throw warnings
-rng = np.random.RandomState(0)
 
 
 @requires_mne
@@ -76,6 +76,7 @@ def test_estimate_ringing():
 def test_1d_filter():
     """Test our private overlap-add filtering function."""
     # make some random signals and filters
+    rng = np.random.RandomState(0)
     for n_signal in (1, 2, 3, 5, 10, 20, 40):
         x = rng.randn(n_signal)
         for n_filter in (1, 2, 3, 5, 10, 11, 20, 21, 40, 41, 100, 101):
@@ -199,6 +200,7 @@ def test_iir_stability():
 def test_notch_filters():
     """Test notch filters."""
     # let's use an ugly, prime sfreq for fun
+    rng = np.random.RandomState(0)
     sfreq = 487.0
     sig_len_secs = 20
     t = np.arange(0, int(sig_len_secs * sfreq)) / sfreq
@@ -234,6 +236,7 @@ def test_notch_filters():
 
 def test_resample():
     """Test resampling."""
+    rng = np.random.RandomState(0)
     x = rng.normal(0, 1, (10, 10, 10))
     x_rs = resample(x, 1, 2, 10)
     assert_equal(x.shape, (10, 10, 10))
@@ -283,6 +286,7 @@ def test_resample_stim_channel():
 @pytest.mark.slowtest
 def test_filters():
     """Test low-, band-, high-pass, and band-stop filters plus resampling."""
+    rng = np.random.RandomState(0)
     sfreq = 100
     sig_len_secs = 15
 
@@ -329,7 +333,7 @@ def test_filters():
         lp = filter_data(a, sfreq, None, 8, None, fl, 10, 1.0, n_jobs=2,
                          **kwargs)
         hp = filter_data(lp, sfreq, 4, None, None, fl, 1.0, 10, **kwargs)
-        assert_allclose(hp, bp, rtol=1e-3, atol=1e-3)
+        assert_allclose(hp, bp, rtol=1e-3, atol=2e-3)
         assert_allclose(bp + bs, a, rtol=1e-3, atol=1e-3)
         # Sanity check ttenuation
         mask = (freqs > 5.5) & (freqs < 6.5)
@@ -459,6 +463,7 @@ def test_cuda():
     # some warnings about clean-up failing
     # Also, using `n_jobs='cuda'` on a non-CUDA system should be fine,
     # as it should fall back to using n_jobs=1.
+    rng = np.random.RandomState(0)
     sfreq = 500
     sig_len_secs = 20
     a = rng.randn(sig_len_secs * sfreq)
@@ -536,5 +541,38 @@ def test_interp2():
     expected = np.linspace(10, -10, 100, endpoint=False)[np.newaxis]
     assert_allclose(out, expected, atol=1e-7)
 
+
+def test_cola():
+    """Test COLA processing."""
+
+    def processor(x):
+        return (x / 2.,)  # halve the signal
+
+    sfreq = 1000.
+    rng = np.random.RandomState(0)
+    for n_total in (999, 1000, 1001):
+        signal = rng.randn(1, n_total)
+        out = rng.randn(1, n_total)  # shouldn't matter
+        for n_samples in (99, 100, 101, 102):
+            for window in ('hann', 'bartlett', 'boxcar', 'triang'):
+                # A few example COLA possibilities
+                n_overlaps = ()
+                if window in ('hann', 'bartlett') or n_samples % 2 == 0:
+                    n_overlaps += ((n_samples + 1) // 2,)
+                if window == 'boxcar':
+                    n_overlaps += (0,)
+                for n_overlap in n_overlaps:
+                    # can pass callable or ndarray
+                    for storer in (out, _Storer(out)):
+                        cola = _COLA(processor, storer, n_total, n_samples,
+                                     n_overlap, sfreq, window)
+                        n_input = 0
+                        # feed data in an annoying way
+                        while n_input < n_total:
+                            next_len = min(rng.randint(1, 30),
+                                           n_total - n_input)
+                            cola.feed(signal[:, n_input:n_input + next_len])
+                            n_input += next_len
+                        assert_allclose(out, signal / 2., atol=1e-7)
 
 run_tests_if_main()
