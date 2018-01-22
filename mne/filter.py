@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 from functools import partial
-from numbers import Integral
+import operator
 
 import numpy as np
 from scipy.fftpack import fft, ifftshift, fftfreq, ifft
@@ -2380,19 +2380,18 @@ class _COLA(object):
     def __init__(self, process, store, n_total, n_samples, n_overlap,
                  sfreq, window='hann', tol=1e-10, verbose=None):
         from scipy.signal import get_window
-        if not isinstance(n_samples, Integral) or n_samples <= 0:
-            raise TypeError('n_samples must be an int > 0, got %s'
-                            % (n_samples,))
+        n_samples = operator.index(n_samples)
+        n_overlap = operator.index(n_overlap)
+        n_total = operator.index(n_total)
+        if n_samples <= 0:
+            raise ValueError('n_samples must be > 0, got %s' % (n_samples,))
+        if n_overlap < 0:
+            raise ValueError('n_overlap must be >= 0, got %s' % (n_overlap,))
+        if n_total < 0:
+            raise ValueError('n_total must be >= 0, got %s' % (n_total,))
         self._n_samples = int(n_samples)
-        del n_samples
-        if not isinstance(n_overlap, Integral) or n_overlap < 0:
-            raise TypeError('n_overlap must be an int >= 0, got %s'
-                            % (n_overlap,))
         self._n_overlap = int(n_overlap)
-        del n_overlap
-        if not isinstance(n_total, Integral):
-            raise TypeError('n_total must be an int > 0, got %s'
-                            % (type(n_total),))
+        del n_samples, n_overlap
         if n_total < self._n_samples:
             raise ValueError('Number of samples per window (%d) must be at '
                              'most the total number of samples (%s)'
