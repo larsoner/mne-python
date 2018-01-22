@@ -479,7 +479,8 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
     mc.initialize(get_this_decomp_trans, info['dev_head_t'], S_recon)
 
     # First pass: cross_talk, st_fixed=True
-    for ii, (start, stop) in enumerate(zip(tsss_pre.starts, tsss_pre.stops)):
+    read_lims = list(range(0, len(raw_sss.times), step)) + [len(raw_sss.times)]
+    for ii, (start, stop) in enumerate(zip(read_lims[:-1], read_lims[1:])):
         orig_data = raw_sss._data[meg_picks[good_picks], start:stop]
         if cross_talk is not None:
             orig_data = ctc.dot(orig_data)
@@ -492,7 +493,6 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
                       n_positions=n_positions, t_str=t_str)
 
     # Second pass: movement compensation, st_fixed=False
-    read_lims = list(range(0, len(raw_sss.times), step)) + [len(raw_sss.times)]
     for ii, (start, stop) in enumerate(zip(read_lims[:-1], read_lims[1:])):
         data, orig_in_data, resid, pos_data, n_positions = mc.feed(
             raw_sss._data[meg_picks, start:stop], good_picks,

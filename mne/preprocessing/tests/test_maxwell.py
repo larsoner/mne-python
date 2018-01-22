@@ -535,6 +535,8 @@ def test_spatiotemporal():
     """Test Maxwell filter (tSSS) spatiotemporal processing."""
     # Load raw testing data
     raw = read_crop(raw_fname)
+    mag_picks = pick_types(raw.info, meg='mag', exclude=())
+    power = np.sqrt(np.sum(raw[mag_picks][0] ** 2))
 
     # Test that window is less than length of data
     assert_raises(ValueError, maxwell_filter, raw, st_duration=1000.,
@@ -546,7 +548,7 @@ def test_spatiotemporal():
     st_durations = [4.]  # , 10.]
     tols = [325.]  # , 200.]
     kwargs = dict(origin=mf_head_origin, regularize=None,
-                  bad_condition='ignore', st_detrend=False, st_overlap=False)
+                  bad_condition='ignore', st_detrend=False)
     for st_duration, tol in zip(st_durations, tols):
         # Load tSSS data depending on st_duration and get data
         tSSS_fname = op.join(sss_path,
@@ -562,13 +564,19 @@ def test_spatiotemporal():
         # Test sss computation at the standard head origin. Same cropping issue
         # as mentioned above.
         raw_tsss = maxwell_filter(
-            raw, st_duration=st_duration, **kwargs)
+            raw, st_duration=st_duration, st_overlap=False, **kwargs)
         assert_equal(raw_tsss.estimate_rank(), 140)
         assert_meg_snr(raw_tsss, tsss_bench, tol)
         py_st = raw_tsss.info['proc_history'][0]['max_info']['max_st']
         assert_true(len(py_st) > 0)
         assert_equal(py_st['buflen'], st_duration)
         assert_equal(py_st['subspcorr'], 0.98)
+        _assert_shielding(raw_tsss, power, 20.9)
+        # COLA
+        raw_tsss = maxwell_filter(
+            raw, st_duration=st_duration, st_overlap=True, **kwargs)
+        assert_equal(raw_tsss.estimate_rank(), 140)
+        _assert_shielding(raw_tsss, power, 20.0)
 
     # Degenerate cases
     assert_raises(ValueError, maxwell_filter, raw, st_duration=10.,
@@ -592,19 +600,25 @@ def test_spatiotemporal_only():
                               **std_kwargs)
     assert_equal(len(raw.info['projs']), len(raw_tsss.info['projs']))
     assert_equal(raw_tsss.estimate_rank(), len(picks))
-    _assert_shielding(raw_tsss, power, 9)
+    _assert_shielding(raw_tsss, power, 9.2)
     # with movement
     head_pos = read_head_pos(pos_fname)
     raw_tsss = maxwell_filter(raw, st_duration=tmax / 2., st_only=True,
                               head_pos=head_pos, **std_kwargs)
     assert_equal(raw_tsss.estimate_rank(), len(picks))
-    _assert_shielding(raw_tsss, power, 9)
+    _assert_shielding(raw_tsss, power, 9.2)
     with warnings.catch_warnings(record=True):  # st_fixed False
         raw_tsss = maxwell_filter(raw, st_duration=tmax / 2., st_only=True,
                                   head_pos=head_pos, st_fixed=False,
                                   **std_kwargs)
     assert_equal(raw_tsss.estimate_rank(), len(picks))
-    _assert_shielding(raw_tsss, power, 9)
+    _assert_shielding(raw_tsss, power, 9.2, upper=9.4)
+    # COLA
+    raw_tsss = maxwell_filter(raw, st_duration=tmax / 2., st_only=True,
+                              head_pos=head_pos, st_overlap=True,
+                              st_detrend=False)
+    assert_equal(raw_tsss.estimate_rank(), len(picks))
+    _assert_shielding(raw_tsss, power, 9.5)
     # should do nothing
     raw_tsss = maxwell_filter(raw, st_duration=tmax, st_correlation=1.,
                               st_only=True, **std_kwargs)
@@ -820,7 +834,8 @@ def test_head_translation():
 # that calculates the localization error:
 # http://ieeexplore.ieee.org/xpl/articleDetails.jsp?arnumber=1495874
 
-def _assert_shielding(raw_sss, erm_power, shielding_factor, meg='mag'):
+def _assert_shielding(raw_sss, erm_power, shielding_factor, meg='mag',
+                      upper=None):
     """Helper to assert a minimum shielding factor using empty-room power."""
     picks = pick_types(raw_sss.info, meg=meg, ref_meg=False)
     if isinstance(erm_power, BaseRaw):
@@ -832,6 +847,9 @@ def _assert_shielding(raw_sss, erm_power, shielding_factor, meg='mag'):
     factor = erm_power / sss_power
     assert_true(factor >= shielding_factor,
                 'Shielding factor %0.3f < %0.3f' % (factor, shielding_factor))
+    if upper is not None:
+        assert_true(factor <= upper,
+                    'Shielding factor %0.3f > %0.3f' % (factor, upper))
 
 
 @buggy_mkl_svd
