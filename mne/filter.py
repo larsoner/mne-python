@@ -2418,7 +2418,7 @@ class _COLA(object):
         window_name = window if isinstance(window, string_types) else 'custom'
         self._window = get_window(window, self._n_samples,
                                   fftbins=(self._n_samples - 1) % 2)
-        self._window /= _check_COLA(self._window, self._n_samples, self._step,
+        self._window /= _check_cola(self._window, self._n_samples, self._step,
                                     window_name, tol=tol)
         self.starts = np.arange(0, n_total - self._n_samples + 1, self._step)
         self.stops = self.starts + self._n_samples
@@ -2481,16 +2481,16 @@ class _COLA(object):
             start, stop = self.starts[self._idx], self.stops[self._idx]
             this_len = stop - start
             this_window = self._window.copy()
-            if self._idx == 0:
-                for offset in range(self._n_samples - self._step, 0,
-                                    -self._step):
-                    this_window[:offset] += self._window[-offset:]
             if self._idx == len(self.starts) - 1:
                 this_window = np.pad(
                     self._window, (0, this_len - len(this_window)), 'constant')
                 for offset in range(self._step, len(this_window), self._step):
                     n_use = len(this_window) - offset
                     this_window[offset:] += self._window[:n_use]
+            if self._idx == 0:
+                for offset in range(self._n_samples - self._step, 0,
+                                    -self._step):
+                    this_window[:offset] += self._window[-offset:]
             logger.debug('    * Processing %d->%d' % (start, stop))
             this_proc = [in_[:, :this_len].copy() for in_ in self._in_buffers]
             if not all(proc.shape[1] == this_len == this_window.size
@@ -2520,7 +2520,7 @@ class _COLA(object):
                 ob[:, -delta:] = 0.
 
 
-def _check_COLA(win, nperseg, step, window_name, tol=1e-10):
+def _check_cola(win, nperseg, step, window_name, tol=1e-10):
     """Check whether the Constant OverLap Add (COLA) constraint is met."""
     # adapted from SciPy
     binsums = np.sum([win[ii*step:(ii+1)*step]
@@ -2544,7 +2544,7 @@ class _Storer(object):
     def __init__(self, *outs, **kwargs):
         for oi, out in enumerate(outs):
             if not isinstance(out, np.ndarray) or out.ndim != 2:
-                raise TypeError('outs[oi] must be 2D ndarray')
+                raise TypeError('outs[oi] must be 2D ndarray, got %s' % (out,))
         self.outs = outs
         self.idx = 0
         picks = kwargs.pop('picks', None)

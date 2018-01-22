@@ -314,9 +314,8 @@ def test_other_systems():
                                   **std_kwargs)
     assert_allclose(raw_sss._data, raw_sss_auto._data)
     with catch_logging() as log:
-        with warnings.catch_warnings(record=True):  # st_overlap
-            maxwell_filter(raw_ctf, origin=(0., 0., 0.04), regularize=None,
-                           ignore_ref=True, verbose=True)
+        maxwell_filter(raw_ctf, origin=(0., 0., 0.04), regularize=None,
+                       ignore_ref=True, st_overlap=False, verbose=True)
     assert '80/80 in, 12/15 out' in log.getvalue()  # homogeneous fields
 
 
@@ -547,7 +546,7 @@ def test_spatiotemporal():
     st_durations = [4.]  # , 10.]
     tols = [325.]  # , 200.]
     kwargs = dict(origin=mf_head_origin, regularize=None,
-                  bad_condition='ignore')
+                  bad_condition='ignore', st_detrend=False, st_overlap=False)
     for st_duration, tol in zip(st_durations, tols):
         # Load tSSS data depending on st_duration and get data
         tSSS_fname = op.join(sss_path,
@@ -562,23 +561,9 @@ def test_spatiotemporal():
 
         # Test sss computation at the standard head origin. Same cropping issue
         # as mentioned above.
-        if st_duration == 10.:
-            raw_tsss = maxwell_filter(raw.crop(0, st_duration),
-                                      origin=mf_head_origin,
-                                      st_duration=st_duration, regularize=None,
-                                      bad_condition='ignore', **std_kwargs)
-        else:
-            raw_tsss = maxwell_filter(raw, st_duration=st_duration,
-                                      origin=mf_head_origin, regularize=None,
-                                      bad_condition='ignore', verbose=True,
-                                      **std_kwargs)
-            raw_tsss_2 = maxwell_filter(raw, st_duration=st_duration,
-                                        origin=mf_head_origin, regularize=None,
-                                        bad_condition='ignore', st_fixed=False,
-                                        verbose=True, **std_kwargs)
-            assert_meg_snr(raw_tsss, raw_tsss_2, 100., 1000.)
-            assert_equal(raw_tsss.estimate_rank(), 140)
-            assert_equal(raw_tsss_2.estimate_rank(), 140)
+        raw_tsss = maxwell_filter(
+            raw, st_duration=st_duration, **kwargs)
+        assert_equal(raw_tsss.estimate_rank(), 140)
         assert_meg_snr(raw_tsss, tsss_bench, tol)
         py_st = raw_tsss.info['proc_history'][0]['max_info']['max_st']
         assert_true(len(py_st) > 0)

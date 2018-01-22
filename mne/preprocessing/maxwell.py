@@ -195,7 +195,7 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
     .. note:: This code may use multiple CPU cores, see the
               :ref:`FAQ <faq_cpu>` for more information.
 
-    Compared to Elekta's MaxFilter™ software, the MNE Maxwell filtering
+    Compared to Elekta's MaxFilter™ 2.2.11 software, the MNE Maxwell filtering
     routines currently provide the following features:
 
     +-----------------------------------------------------------------------------+-----+-----------+
@@ -219,13 +219,17 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
     +-----------------------------------------------------------------------------+-----+-----------+
     | Movement compensation (raw)                                                 | X   | X         |
     +-----------------------------------------------------------------------------+-----+-----------+
-    | Movement compensation (:func:`epochs <mne.epochs.average_movements>`)       | X   |           |
-    +-----------------------------------------------------------------------------+-----+-----------+
     | :func:`cHPI subtraction <mne.chpi.filter_chpi>`                             | X   | X         |
+    +-----------------------------------------------------------------------------+-----+-----------+
+    | Movement compensation (:func:`epochs <mne.epochs.average_movements>`)       | X   |           |
     +-----------------------------------------------------------------------------+-----+-----------+
     | Double floating point precision                                             | X   |           |
     +-----------------------------------------------------------------------------+-----+-----------+
     | Seamless processing of split (``-1.fif``) and concatenated files            | X   |           |
+    +-----------------------------------------------------------------------------+-----+-----------+
+    | Overlap-add processing for spatio-temporal projections                      | X   |           |
+    +-----------------------------------------------------------------------------+-----+-----------+
+    | Smooth interpolation in movement compensation                               | X   |           |
     +-----------------------------------------------------------------------------+-----+-----------+
     | Certified for clinical use                                                  |     | X         |
     +-----------------------------------------------------------------------------+-----+-----------+
@@ -557,8 +561,12 @@ def _check_pos_2(pos, head_frame, raw):
 class _MoveComp(object):
     """Perform movement compensation."""
 
-    def __init__(self, pos, head_frame, raw):
+    def __init__(self, pos, head_frame, raw, interp='zero'):
         self.pos = _check_pos_2(pos, head_frame, raw)
+        if interp != 'zero':
+            raise NotImplementedError('Cannot interpolate with mode %s'
+                                      % (interp,))
+        self.interp = 'zero'
 
     def initialize(self, get_decomp, dev_head_t, S_recon):
         """Secondary initialization."""

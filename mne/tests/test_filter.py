@@ -553,7 +553,8 @@ def test_cola():
     for n_total in (999, 1000, 1001):
         signal = rng.randn(1, n_total)
         out = rng.randn(1, n_total)  # shouldn't matter
-        for n_samples in (99, 100, 101, 102):
+        for n_samples in (99, 100, 101, 102,
+                          n_total - n_total // 2 + 1, n_total):
             for window in ('hann', 'bartlett', 'boxcar', 'triang'):
                 # A few example COLA possibilities
                 n_overlaps = ()
@@ -574,5 +575,6 @@ def test_cola():
                             cola.feed(signal[:, n_input:n_input + next_len])
                             n_input += next_len
                         assert_allclose(out, signal / 2., atol=1e-7)
+
 
 run_tests_if_main()
