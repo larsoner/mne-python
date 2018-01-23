@@ -2288,6 +2288,7 @@ class _Interp2(object):
                 return [v[idx] if v is not None else None for v in use_values]
             values = val
         self.values = values
+        self.n_last = None
         self._position = 0  # start at zero
         self._left_idx = 0
         self._left = self._right = self._use_interp = None
@@ -2297,9 +2298,9 @@ class _Interp2(object):
                              % (known_types, interp))
         self._interp = interp
 
-    @verbose
-    def feed(self, n_pts, verbose=None):
+    def feed(self, n_pts):
         """Feed data and get interpolated values."""
+        self.n_last = 0
         n_pts = operator.index(n_pts)
         original_position = self._position
         stop = self._position + n_pts
@@ -2328,6 +2329,7 @@ class _Interp2(object):
                     outs[vi][..., :n_use] = v[..., np.newaxis]
             self._position += n_use
             n_used += n_use
+            self.n_last += 1
 
         # Standard interpolation condition
         stop_right_idx = np.where(self.control_points >= stop)[0]
@@ -2335,6 +2337,7 @@ class _Interp2(object):
             stop_right_idx = [len(self.control_points) - 1]
         stop_right_idx = stop_right_idx[0]
         left_idxs = np.arange(self._left_idx, stop_right_idx)
+        self.n_last += max(len(left_idxs) - 1, 0)
         for bi, left_idx in enumerate(left_idxs):
             if left_idx != self._left_idx or self._right is None:
                 if self._right is not None:
@@ -2352,7 +2355,7 @@ class _Interp2(object):
             if self._use_interp is None:
                 interp_span = right_point - left_point
                 if self._interp == 'zero':
-                    self._use_interp = np.ones(interp_span)
+                    self._use_interp = None
                 elif self._interp == 'linear':
                     self._use_interp = np.linspace(1., 0., interp_span,
                                                    endpoint=False)
@@ -2370,9 +2373,12 @@ class _Interp2(object):
                              left_point, right_point))
                 interp_start = self._position - left_point
                 assert interp_start >= 0
-                this_interp = \
-                    self._use_interp[interp_start:interp_start + n_use]
-                assert this_interp.size == n_use
+                if self._use_interp is None:
+                    this_interp = None
+                else:
+                    this_interp = \
+                        self._use_interp[interp_start:interp_start + n_use]
+                    assert this_interp.size == n_use
                 this_sl = slice(n_used, n_used + n_use)
                 assert used[this_sl].size == n_use
                 assert not used[this_sl].any()
@@ -2380,9 +2386,12 @@ class _Interp2(object):
                 for vi, (left_, right_) in enumerate(zip(self._left,
                                                          self._right)):
                     if outs[vi] is not None:
-                        outs[vi][..., this_sl] = (
-                            left_[..., np.newaxis] * this_interp +
-                            right_[..., np.newaxis] * (1. - this_interp))
+                        if this_interp is None:
+                            outs[vi][..., this_sl] = left_[..., np.newaxis]
+                        else:
+                            outs[vi][..., this_sl] = (
+                                left_[..., np.newaxis] * this_interp +
+                                right_[..., np.newaxis] * (1. - this_interp))
                 self._position += n_use
                 n_used += n_use
 
@@ -2400,6 +2409,7 @@ class _Interp2(object):
                         outs[vi][..., this_sl] = v[..., np.newaxis]
                 self._position += n_use
                 n_used += n_use
+                self.n_last += 1
         assert self._position == stop
         assert n_used == n_pts
         assert used.all()

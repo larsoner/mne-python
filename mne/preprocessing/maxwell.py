@@ -455,13 +455,6 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
     #
 
     # Compute the first bit of pos_data for cHPI reporting
-    if info['dev_head_t'] is not None and head_pos[0] is not None:
-        this_pos_quat = np.concatenate([
-            rot_to_quat(info['dev_head_t']['trans'][:3, :3]),
-            info['dev_head_t']['trans'][:3, 3],
-            np.zeros(3)])
-    else:
-        this_pos_quat = None
     get_this_decomp_trans = partial(
         _get_decomp, all_coils=all_coils,
         cal=calibration, regularize=regularize,
@@ -479,7 +472,7 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
         if cross_talk is not None:
             ctc_data = ctc.dot(ctc_data)
         # Apply the average transform and feed data to the tSSS pre-mc
-        # operator, which will pass its results to the right place
+        # operator, which will pass its results to raw_sss._data
         if st_fixed and st_correlation is not None:
             in_data, resid, n_positions = mc.feed_avg(ctc_data)
             if st_only:
@@ -496,7 +489,7 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
         t_str = '%8.3f - %8.3f sec' % tuple(raw_sss.times[[start, stop - 1]])
         data, orig_in_data, resid, pos_data, n_positions = mc.feed(
             raw_sss._data[meg_picks, start:stop], good_picks,
-            head_pos, this_pos_quat, st_only)
+            head_pos, st_only)
         raw_sss._data[meg_picks, start:stop] = data
         if len(pos_picks) > 0:
             raw_sss._data[pos_picks, start:stop] = pos_data
@@ -542,18 +535,21 @@ def _check_pos_2(pos, head_frame, raw):
             warn('Found a distance greater than 1 m (%0.3g m) from the device '
                  'origin, positions may be invalid and Maxwell filtering '
                  'could fail' % (max_dist,))
-    # Prepend the existing dev_head_t to make movecomp easier
-    t = np.concatenate([[-1. / raw.info['sfreq']], t - t_off])
-    trans = raw.info['dev_head_t']['trans'] if head_frame else np.eye(4)
-    dev_head_pos = np.concatenate([t[[0]], rot_to_quat(trans[:3, :3]),
-                                   trans[:3, 3], [0, 0, 0]])
-    pos = np.concatenate([dev_head_pos[np.newaxis], pos])
+    t = t - t_off
+    if len(t) == 0 or t[0] > 0:
+        # Prepend the existing dev_head_t to make movecomp easier
+        t = np.concatenate([[0.], t])
+        trans = raw.info['dev_head_t']['trans'] if head_frame else np.eye(4)
+        dev_head_pos = np.concatenate([t[[0]], rot_to_quat(trans[:3, :3]),
+                                       trans[:3, 3], [0, 0, 0]])
+        pos = np.concatenate([dev_head_pos[np.newaxis], pos])
+    t[0] = 0
     dev_head_ts = np.zeros((len(t), 4, 4))
     dev_head_ts[:, 3, 3] = 1.
     dev_head_ts[:, :3, 3] = pos[:, 4:7]
     dev_head_ts[:, :3, :3] = quat_to_rot(pos[:, 1:4])
     t = raw.time_as_index(t, use_rounding=True)
-    assert t[0] == -1
+    assert t[0] == 0
     pos = [dev_head_ts, t, pos[:, 1:]]
     assert all(len(p) == len(pos[0]) for p in pos)
     return pos
@@ -564,10 +560,24 @@ class _MoveComp(object):
 
     def __init__(self, pos, head_frame, raw, interp='zero'):
         self.pos = _check_pos_2(pos, head_frame, raw)
-        if interp != 'zero':
-            raise NotImplementedError('Cannot interpolate with mode %s'
-                                      % (interp,))
-        self.interp = 'zero'
+        self.sfreq = raw.info['sfreq']
+        self.smooth = _Interp2(self.pos[1], self.get_decomp_by_offset, interp)
+
+    def get_decomp_by_offset(self, offset):
+        idx = np.where(self.pos[1] == offset)[0][0]
+        dev_head_t = self.pos[0][idx]
+        t = idx / self.sfreq
+        S_decomp, pS_decomp, reg_moments, n_use_in = \
+            self.get_decomp(dev_head_t, t=t)
+        S_recon_reg = self.S_recon.take(
+            reg_moments[:n_use_in], axis=1)
+        op_sss = np.dot(S_recon_reg, pS_decomp[:n_use_in])
+        op_in = np.dot(S_decomp[:, :n_use_in],
+                       pS_decomp[:n_use_in])
+        op_resid = np.eye(S_decomp.shape[0]) - op_in
+        op_resid -= np.dot(S_decomp[:, n_use_in:],
+                           pS_decomp[n_use_in:])
+        return op_sss, op_in, op_resid
 
     def initialize(self, get_decomp, dev_head_t, S_recon):
         """Secondary initialization."""
@@ -583,24 +593,9 @@ class _MoveComp(object):
 
     def feed_avg(self, good_data):
         """Apply an average transformation over the next interval."""
-        start = self.avg_offset
-        stop = start + good_data.shape[1]
-        pos_idx = np.arange(np.where(self.pos[1] <= start)[0][-1],
-                            np.where(self.pos[1] < stop)[0][-1] + 1)
-        used = np.zeros(stop - start, bool)
-        weights = np.zeros(len(pos_idx))
-        for ti in range(len(pos_idx)):
-            # first iteration for this block of data
-            rel_start = 0 if ti == 0 else self.pos[1][pos_idx[ti]] - start
-            if ti == len(pos_idx) - 1:
-                rel_stop = stop - start
-            else:
-                rel_stop = self.pos[1][pos_idx[ti + 1]] - start
-            used[rel_start:rel_stop] = True
-            weights[ti] = rel_stop - rel_start
-        assert used.all()
-        weights /= stop - start
-        avg_quat = np.dot(weights, self.pos[2][pos_idx][:, :6])
+        n_pos, avg_quat = _trans_lims(
+            self.pos, self.avg_offset,
+            self.avg_offset + good_data.shape[-1])[1:]
         if not np.allclose(avg_quat, self.last_avg_quat, atol=1e-7):
             self.last_avg_quat = avg_quat
             avg_trans = np.vstack([
@@ -616,46 +611,58 @@ class _MoveComp(object):
                 pS_decomp_st[n_use_in_st:])
         in_data = np.dot(self.op_in, good_data)
         resid = np.dot(self.op_resid, good_data)
-        self.avg_offset += stop - start
-        return in_data, resid, len(pos_idx)
+        self.avg_offset += good_data.shape[1]
+        return in_data, resid, n_pos
 
-    def feed(self, data, good_picks, head_pos, this_pos_quat, st_only):
-        start = self.offset
-        stop = start + data.shape[1]
-        resid = np.empty((len(good_picks), stop - start))
-        in_data = np.empty((len(good_picks), stop - start))
-        pos_data = np.zeros((9, stop - start))
+    def feed(self, data, good_picks, head_pos, st_only):
+        n_samp = data.shape[1]
+        sss_op, op_in, op_resid = self.smooth.feed(n_samp)
+        pos_data, n_pos = _trans_lims(
+            self.pos, self.offset,
+            self.offset + data.shape[-1])[:2]
+        self.offset += data.shape[-1]
+
         # Do movement compensation on the data
-        t_s_s_q_a = _trans_lims(head_pos, start, stop, this_pos_quat)
-        for trans, rel_start, rel_stop, this_pos_quat in \
-                zip(*t_s_s_q_a[:4]):
-            # Recalculate bases if necessary (trans will be None iff the
-            # first position in this interval is the same as last of the
-            # previous interval)
-            good_data = data[good_picks, rel_start:rel_stop]
-            if trans is not None:
-                self.S_decomp, self.pS_decomp, self.reg_moments, \
-                    self.n_use_in = self.get_decomp(trans, t=0.)
-            # Our output data
-            if not st_only:
-                S_recon_reg = self.S_recon.take(
-                    self.reg_moments[:self.n_use_in], axis=1)
-                sss_op = np.dot(S_recon_reg, self.pS_decomp[:self.n_use_in])
-                data[:, rel_start:rel_stop] = np.dot(sss_op, good_data)
-            if this_pos_quat is not None:
-                pos_data[:, rel_start:rel_stop] = this_pos_quat[:, np.newaxis]
+        good_data = data[good_picks]
+        if not st_only:
+            data[:] = einsum('vst,st->vt', sss_op, good_data)
 
-            # Reconstruct data using original location from external
-            # and internal spaces and compute residual
-            op_in = np.dot(self.S_decomp[:, :self.n_use_in],
-                           self.pS_decomp[:self.n_use_in])
-            op_resid = np.eye(len(op_in)) - op_in - np.dot(
-                self.S_decomp[:, self.n_use_in:],
-                self.pS_decomp[self.n_use_in:])
-            in_data[:, rel_start:rel_stop] = np.dot(op_in, good_data)
-            resid[:, rel_start:rel_stop] = np.dot(op_resid, good_data)
-        self.offset += stop - start
-        return data, in_data, resid, pos_data, len(t_s_s_q_a[0])
+        # Reconstruct data using original location from external
+        # and internal spaces and compute residual
+        in_data = einsum('vst,st->vt', op_in, good_data)
+        resid = einsum('vst,st->vt', op_resid, good_data)
+        return data, in_data, resid, pos_data, n_pos
+
+
+def _trans_lims(pos, start, stop):
+    """Get all trans and limits we need."""
+    pos_start = np.where((pos[1] > start))[0]
+    pos_start = 0 if len(pos_start) == 0 else pos_start[0] - 1
+    pos_stop = np.where(pos[1] < stop)[0]
+    pos_stop = pos_start + 1 if len(pos_stop) == 0 else pos_stop[-1] + 1
+    pos_idx = np.arange(pos_start, pos_stop)
+    used = np.zeros(stop - start, bool)
+    quats = np.empty((9, stop - start))
+    avg_trans = np.zeros(6)
+    for ti in range(len(pos_idx)):
+        rel_start = max(pos[1][pos_idx[ti]] - start, 0)
+        if ti == len(pos_idx) - 1:
+            rel_stop = stop - start
+        else:
+            rel_stop = pos[1][pos_idx[ti + 1]] - start
+        this_quat = pos[2][pos_idx[ti]]
+        quats[:, rel_start:rel_stop] = this_quat[:, np.newaxis]
+        assert 0 <= rel_start
+        assert rel_start < rel_stop
+        assert rel_stop <= stop - start
+        assert not used[rel_start:rel_stop].any()
+        used[rel_start:rel_stop] = True
+        if avg_trans is not None:
+            avg_trans += this_quat[:6] * (rel_stop - rel_start)
+    assert used.all()
+    # Use weighted average for average trans over the window
+    avg_trans /= (stop - start)
+    return quats, len(pos_idx), avg_trans
 
 
 def _get_coil_scale(meg_picks, mag_picks, grad_picks, mag_scale, info):
@@ -757,54 +764,6 @@ def _prep_mf_coils(info, ignore_ref=True):
     slice_map = dict((ii, slice(start, stop))
                      for ii, (start, stop) in enumerate(zip(bd[:-1], bd[1:])))
     return rmags, cosmags, bins, n_coils, mag_mask, slice_map
-
-
-def _trans_lims(pos, start, stop, this_pos_data):
-    """Get all trans and limits we need."""
-    pos_idx = np.where((pos[1] >= start) & (pos[1] < stop))[0]
-    used = np.zeros(stop - start, bool)
-    trans = list()
-    rel_starts = list()
-    rel_stops = list()
-    quats = list()
-    avg_trans = None if this_pos_data is None else np.zeros(6)
-    for ti in range(-1, len(pos_idx)):
-        # first iteration for this block of data
-        if ti < 0:
-            rel_start = 0
-            rel_stop = pos[1][pos_idx[0]] if len(pos_idx) > 0 else stop
-            rel_stop = rel_stop - start
-            # Don't calculate S_decomp here, use the last one
-            if rel_start == rel_stop:
-                continue  # our first pos occurs on first time sample
-            trans.append(None)  # meaning: use previous
-            quats.append(this_pos_data)
-        else:
-            rel_start = pos[1][pos_idx[ti]] - start
-            if ti == len(pos_idx) - 1:
-                rel_stop = stop - start
-            else:
-                rel_stop = pos[1][pos_idx[ti + 1]] - start
-            trans.append(pos[0][pos_idx[ti]])
-            quats.append(pos[2][pos_idx[ti]])
-        assert 0 <= rel_start
-        assert rel_start < rel_stop
-        assert rel_stop <= stop - start
-        assert not used[rel_start:rel_stop].any()
-        used[rel_start:rel_stop] = True
-        rel_starts.append(rel_start)
-        rel_stops.append(rel_stop)
-        if avg_trans is not None:
-            avg_trans += quats[-1][:6] * (rel_stop - rel_start)
-    assert used.all()
-    # Use weighted average for average trans over the window
-    if avg_trans is not None:
-        avg_trans /= (stop - start)
-        avg_trans = np.vstack([
-            np.hstack([quat_to_rot(avg_trans[:3]),
-                       avg_trans[3:][:, np.newaxis]]),
-            [[0., 0., 0., 1.]]])
-    return trans, rel_starts, rel_stops, quats, avg_trans
 
 
 def _do_tSSS(clean_data, orig_in_data, resid, st_correlation, st_detrend,

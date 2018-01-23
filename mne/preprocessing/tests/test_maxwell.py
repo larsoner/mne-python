@@ -572,21 +572,36 @@ def test_spatiotemporal():
         assert_equal(py_st['buflen'], st_duration)
         assert_equal(py_st['subspcorr'], 0.98)
         _assert_shielding(raw_tsss, power, 20.9)
-        # COLA
-        raw_tsss = maxwell_filter(
-            raw, st_duration=st_duration, st_overlap=True, **kwargs)
-        assert_equal(raw_tsss.estimate_rank(), 140)
-        _assert_shielding(raw_tsss, power, 20.0)
 
     # Degenerate cases
     assert_raises(ValueError, maxwell_filter, raw, st_duration=10.,
                   st_correlation=0., **std_kwargs)
 
 
+@buggy_mkl_svd
+@requires_svd_convergence
+@testing.requires_testing_data
+def test_st_overlap():
+    """Test st_overlap."""
+    raw = read_crop(raw_fname).crop(0, 1.)
+    mag_picks = pick_types(raw.info, meg='mag', exclude=())
+    power = np.sqrt(np.sum(raw[mag_picks][0] ** 2))
+    kwargs = dict(origin=mf_head_origin, regularize=None,
+                  bad_condition='ignore', st_detrend=False)
+    raw_tsss = maxwell_filter(
+        raw, st_duration=0.5, st_overlap=False, **kwargs)
+    assert_equal(raw_tsss.estimate_rank(), 140)
+    _assert_shielding(raw_tsss, power, 35.8, upper=35.9)
+    raw_tsss = maxwell_filter(
+        raw, st_duration=0.5, st_overlap=True, **kwargs)
+    assert_equal(raw_tsss.estimate_rank(), 140)
+    _assert_shielding(raw_tsss, power, 35.7, upper=35.8)
+
+
 @pytest.mark.slowtest
 @requires_svd_convergence
 @testing.requires_testing_data
-def test_spatiotemporal_only():
+def test_st_only():
     """Test tSSS-only processing."""
     # Load raw testing data
     tmax = 0.5
@@ -1058,9 +1073,11 @@ def test_triux():
 
 @testing.requires_testing_data
 def test_MGH_cross_talk():
+    """Test cross-talk cancellation with MGH data."""
     raw = read_crop(raw_fname, (0., 1.))
     raw_sss = maxwell_filter(raw, cross_talk=ctc_mgh_fname, **std_kwargs)
     py_ctc = raw_sss.info['proc_history'][0]['max_info']['sss_ctc']
     assert_true(len(py_ctc) > 0)
+
 
 run_tests_if_main()
