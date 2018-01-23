@@ -523,23 +523,76 @@ def test_detrend():
     assert_array_almost_equal(detrend(x, 0), np.zeros_like(x))
 
 
-def test_interp2():
+def test_interp_2pt():
     """Test our two-point interpolator."""
-    interp = _Interp2('zero')
-    x = np.ones((1, 100))
-    interp['y'] = np.array([[10.]])
-    interp['y'] = np.array([[-10]])
-    interp.n_samp = 100
-    out = np.zeros_like(x)
-    interp.interpolate('y', x, out)
-    expected = 10 * x
-    assert_allclose(out, expected, atol=1e-7)
-    # Linear
-    interp.interp = 'linear'
-    out.fill(0.)
-    interp.interpolate('y', x, out)
-    expected = np.linspace(10, -10, 100, endpoint=False)[np.newaxis]
-    assert_allclose(out, expected, atol=1e-7)
+    n_pts = 200
+    assert n_pts % 50 == 0
+    feeds = [  # test a bunch of feeds to make sure they don't break things
+        [n_pts],
+        [50] * (n_pts // 50),
+        [10] * (n_pts // 10),
+        [5] * (n_pts // 5),
+        [2] * (n_pts // 2),
+        [1] * n_pts,
+    ]
+
+    # ZOH
+    values = np.array([10, -10])
+    expected = np.full(n_pts, 10)
+    for feed in feeds:
+        expected[-1] = 10
+        interp = _Interp2([0, n_pts], values, 'zero')
+        out = np.concatenate([interp.feed(f)[0] for f in feed])
+        assert_allclose(out, expected)
+        interp = _Interp2([0, n_pts - 1], values, 'zero')
+        expected[-1] = -10
+        out = np.concatenate([interp.feed(f)[0] for f in feed])
+        assert_allclose(out, expected)
+
+    # linear and inputs of different sizes
+    values = [np.arange(2)[:, np.newaxis, np.newaxis], np.array([20, 10])]
+    expected = [
+        np.linspace(0, 1, n_pts, endpoint=False)[np.newaxis, np.newaxis, :],
+        np.linspace(20, 10, n_pts, endpoint=False)]
+    for feed in feeds:
+        interp = _Interp2([0, n_pts], values, 'linear')
+        outs = [interp.feed(f) for f in feed]
+        outs = [np.concatenate([o[0] for o in outs], axis=-1),
+                np.concatenate([o[1] for o in outs], axis=-1)]
+        assert_allclose(outs[0], expected[0], atol=1e-7)
+        assert_allclose(outs[1], expected[1], atol=1e-7)
+
+    # cos**2 and more interesting bounds
+    values = np.array([10, -10])
+    expected = np.full(n_pts, 10.)
+    expected[-5:] = -10
+    cos = np.cos(np.linspace(0, np.pi / 2., n_pts - 9,
+                             endpoint=False))
+    expected[4:-5] = cos ** 2 * 20 - 10
+    for feed in feeds:
+        interp = _Interp2([4, n_pts - 5], values, 'cos2')
+        out = np.concatenate([interp.feed(f)[0] for f in feed])
+        assert_allclose(out, expected, atol=1e-7)
+    out = interp.feed(10)[0]
+    assert_allclose(out, [values[-1]] * 10, atol=1e-7)
+
+    # hann and broadcasting
+    n_hann = n_pts - 9
+    expected[4:-5] = np.hanning(2 * n_hann + 1)[n_hann:-1] * 20 - 10
+    expected = np.array([expected, expected[::-1] * 0.5])
+    values = np.array([values, values[::-1] * 0.5]).T
+    for feed in feeds:
+        interp = _Interp2([4, n_pts - 5], values, 'hann')
+        out = np.concatenate([interp.feed(f)[0] for f in feed], axis=-1)
+        assert_allclose(out, expected, atol=1e-7)
+
+    # one control point
+    values = np.array([10])
+    for start in [0, 50, 99, 100, 1000]:
+        interp = _Interp2([start], values, 'zero')
+        out = interp.feed(n_pts)[0]
+        expected = np.full(n_pts, 10.)
+        assert_allclose(out, expected)
 
 
 def test_cola():

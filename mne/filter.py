@@ -2232,6 +2232,11 @@ class _Interp2(object):
 
     Parameters
     ----------
+    control_points : array, shape (n_changes,)
+        The control points (indices) to use.
+    values : callable | array, shape (n_changes, ...)
+        Callable that takes the control point and returns a list of
+        arrays that must be interpolated.
     interp : str
         Can be 'zero', 'linear', 'hann', or 'cos2'.
 
@@ -2254,84 +2259,165 @@ class _Interp2(object):
     """
 
     @verbose
-    def __init__(self, interp='hann'):
+    def __init__(self, control_points, values, interp='hann'):
         # set up interpolation
-        self._last = dict()
-        self._current = dict()
-        self._count = dict()
-        self._n_samp = None
-        self.interp = interp
+        self.control_points = np.array(control_points, int).ravel()
+        if not np.array_equal(np.unique(self.control_points),
+                              self.control_points):
+            raise ValueError('Control points must be sorted and unique')
+        if not (self.control_points >= 0).all():
+            raise ValueError('All control points must be positive')
+        if len(self.control_points) == 0:
+            raise ValueError('Must be at least one control point')
+        if isinstance(values, np.ndarray):
+            values = [values]
+        if isinstance(values, (list, tuple)):
+            for v in values:
+                if not isinstance(v, np.ndarray):
+                    raise TypeError('All entries in "values" must be ndarray, '
+                                    'got %s' % (type(v),))
+                if v.shape[0] != len(self.control_points):
+                    raise ValueError('Values, if provided, must be the same '
+                                     'length as the number of control points '
+                                     '(%s), got %s'
+                                     % (len(self.control_points), v.shape[0]))
+            use_values = values
 
-    def __setitem__(self, key, value):
-        """Update an item."""
-        if value is None:
-            assert key not in self._current
-            return
-        if key in self._current:
-            self._last[key] = self._current[key].copy()
-        self._current[key] = value.copy()
-        self._count[key] = self._count.get(key, 0) + 1
-
-    @property
-    def n_samp(self):
-        return self._n_samp
-
-    @n_samp.setter
-    def n_samp(self, n_samp):
-        # all up to date
-        assert len(set(self._count.values())) == 1
-        self._n_samp = n_samp
-        self.interp = self.interp
-        self._chunks = np.concatenate((np.arange(0, n_samp, 10000), [n_samp]))
-
-    @property
-    def interp(self):
-        return self._interp
-
-    @interp.setter
-    def interp(self, interp):
+            def val(pt):
+                idx = np.where(control_points == pt)[0][0]
+                return [v[idx] for v in use_values]
+            values = val
+        self.values = values
+        self._position = 0  # start at zero
+        self._left_idx = 0
+        self._left = self._right = self._use_interp = None
         known_types = ('cos2', 'linear', 'zero', 'hann')
         if interp not in known_types:
             raise ValueError('interp must be one of %s, got "%s"'
                              % (known_types, interp))
         self._interp = interp
-        if self.n_samp is not None:
-            if self._interp == 'zero':
-                self._interpolators = None
-            else:
-                if self._interp == 'linear':
-                    interp = np.linspace(1, 0, self.n_samp, endpoint=False)
-                elif self._interp == 'cos2':
-                    interp = np.cos(0.5 * np.pi * np.arange(self.n_samp)) ** 2
-                else:  # interp == 'hann'
-                    interp = np.hanning(self.n_samp * 2 + 1)[self.n_samp:-1]
-                self._interpolators = np.array([interp, 1 - interp])
 
-    def interpolate(self, key, data, out, picks=None, data_idx=None):
-        """Interpolate."""
-        picks = slice(None) if picks is None else picks
-        # Process data in large chunks to save on memory
-        for start, stop in zip(self._chunks[:-1], self._chunks[1:]):
-            time_sl = slice(start, stop)
-            if data_idx is not None:
-                # This is useful e.g. when circularly accessing the same data.
-                # This prevents STC blowups in raw data simulation.
-                data_sl = data[:, data_idx[time_sl]]
-            else:
-                data_sl = data[:, time_sl]
-            this_data = np.dot(self._last[key], data_sl)
-            if self._interpolators is not None:
-                this_data *= self._interpolators[0][time_sl]
-            out[picks, time_sl] += this_data
-            if self._interpolators is not None:
-                this_data = np.dot(self._current[key], data_sl)
-                this_data *= self._interpolators[1][time_sl]
-                out[picks, time_sl] += this_data
-            del this_data
+    @verbose
+    def feed(self, n_pts, verbose=None):
+        """Feed data and get interpolated values."""
+        n_pts = operator.index(n_pts)
+        original_position = self._position
+        stop = self._position + n_pts
+        logger.debug('Feed %s (%s-%s)' % (n_pts, self._position, stop))
+        used = np.zeros(n_pts, bool)
+        if self._left is None:  # first one
+            logger.debug('  Eval @ %s (%s)' % (0, self.control_points[0]))
+            self._left = self.values(self.control_points[0])
+            if len(self.control_points) == 1:
+                self._right = self._left
+        outs = [np.empty(v.shape + (n_pts,)) for v in self._left]
+        n_used = 0
+
+        # Left zero-order hold condition
+        if self._position < self.control_points[self._left_idx]:
+            n_use = min(self.control_points[self._left_idx] - self._position,
+                        n_pts)
+            logger.debug('  Left ZOH %s' % n_use)
+            this_sl = slice(None, n_use)
+            assert used[this_sl].size == n_use
+            assert not used[this_sl].any()
+            used[this_sl] = True
+            for vi, v in enumerate(self._left):
+                outs[vi][..., :n_use] = v[..., np.newaxis]
+            self._position += n_use
+            n_used += n_use
+
+        # Standard interpolation condition
+        stop_right_idx = np.where(self.control_points >= stop)[0]
+        if len(stop_right_idx) == 0:
+            stop_right_idx = [len(self.control_points) - 1]
+        stop_right_idx = stop_right_idx[0]
+        left_idxs = np.arange(self._left_idx, stop_right_idx)
+        for bi, left_idx in enumerate(left_idxs):
+            if left_idx != self._left_idx or self._right is None:
+                if self._right is not None:
+                    assert left_idx == self._left_idx + 1
+                    self._left = self._right
+                    self._left_idx += 1
+                    self._use_interp = None  # need to recreate it
+                eval_pt = self.control_points[self._left_idx + 1]
+                logger.debug('  Eval @ %s (%s)'
+                             % (self._left_idx + 1, eval_pt))
+                self._right = self.values(eval_pt)
+            assert self._right is not None
+            left_point = self.control_points[self._left_idx]
+            right_point = self.control_points[self._left_idx + 1]
+            if self._use_interp is None:
+                interp_span = right_point - left_point
+                if self._interp == 'zero':
+                    self._use_interp = np.ones(interp_span)
+                elif self._interp == 'linear':
+                    self._use_interp = np.linspace(1., 0., interp_span,
+                                                   endpoint=False)
+                elif self._interp == 'cos2':
+                    self._use_interp = np.cos(
+                        np.linspace(0, np.pi / 2., interp_span,
+                                    endpoint=False))
+                    self._use_interp *= self._use_interp
+                else:  # hann
+                    self._use_interp = np.hanning(
+                        interp_span * 2 + 1)[interp_span:-1]
+            n_use = min(stop, right_point) - self._position
+            if n_use > 0:
+                logger.debug('  Interp %s %s (%s-%s)' % (self._interp, n_use,
+                             left_point, right_point))
+                interp_start = self._position - left_point
+                assert interp_start >= 0
+                this_interp = \
+                    self._use_interp[interp_start:interp_start + n_use]
+                assert this_interp.size == n_use
+                this_sl = slice(n_used, n_used + n_use)
+                assert used[this_sl].size == n_use
+                assert not used[this_sl].any()
+                used[this_sl] = True
+                for vi, (left_, right_) in enumerate(zip(self._left,
+                                                         self._right)):
+                    outs[vi][..., this_sl] = (
+                        left_[..., np.newaxis] * this_interp +
+                        right_[..., np.newaxis] * (1. - this_interp))
+                self._position += n_use
+                n_used += n_use
+
+        # Right zero-order hold condition
+        if self.control_points[self._left_idx] <= self._position:
+            n_use = stop - self._position
+            if n_use > 0:
+                logger.debug('  Right ZOH %s' % n_use)
+                this_sl = slice(n_pts - n_use, None)
+                assert not used[this_sl].any()
+                used[this_sl] = True
+                assert self._right is not None
+                for vi, v in enumerate(self._right):
+                    outs[vi][..., this_sl] = v[..., np.newaxis]
+                self._position += n_use
+                n_used += n_use
+        assert self._position == stop
+        assert n_used == n_pts
+        assert used.all()
+        assert self._position == original_position + n_pts
+        return outs
 
 
 ###############################################################################
 # Constant overlap-add processing class
+
+
+def _check_store(store):
+    if isinstance(store, np.ndarray):
+        store = [store]
+    if isinstance(store, (list, tuple)) and all(isinstance(s, np.ndarray)
+                                                for s in store):
+        store = _Storer(*store)
+    if not callable(store):
+        raise TypeError('store must be callable, got type %s'
+                        % (type(store),))
+    return store
+
 
 class _COLA(object):
     """Constant overlap-add processing helper.
@@ -2401,15 +2487,7 @@ class _COLA(object):
                             % (type(process),))
         self._process = process
         self._step = self._n_samples - self._n_overlap
-        if isinstance(store, np.ndarray):
-            store = [store]
-        if isinstance(store, (list, tuple)) and all(isinstance(s, np.ndarray)
-                                                    for s in store):
-            store = _Storer(*store)
-        if not callable(store):
-            raise TypeError('store must be callable, got type %s'
-                            % (type(store),))
-        self._store = store
+        self._store = _check_store(store)
         self._idx = 0
         self._in_buffers = self._out_buffers = None
 
