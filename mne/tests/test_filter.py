@@ -586,11 +586,12 @@ def test_interp_2pt():
         out = np.concatenate([interp.feed(f)[0] for f in feed], axis=-1)
         assert_allclose(out, expected, atol=1e-7)
 
-    # one control point
-    values = np.array([10])
+    # one control point and None support
+    values = [np.array([10]), None]
     for start in [0, 50, 99, 100, 1000]:
         interp = _Interp2([start], values, 'zero')
-        out = interp.feed(n_pts)[0]
+        out, none = interp.feed(n_pts)
+        assert none is None
         expected = np.full(n_pts, 10.)
         assert_allclose(out, expected)
 

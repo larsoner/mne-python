@@ -2273,10 +2273,10 @@ class _Interp2(object):
             values = [values]
         if isinstance(values, (list, tuple)):
             for v in values:
-                if not isinstance(v, np.ndarray):
-                    raise TypeError('All entries in "values" must be ndarray, '
-                                    'got %s' % (type(v),))
-                if v.shape[0] != len(self.control_points):
+                if not (v is None or isinstance(v, np.ndarray)):
+                    raise TypeError('All entries in "values" must be ndarray '
+                                    'or None, got %s' % (type(v),))
+                if v is not None and v.shape[0] != len(self.control_points):
                     raise ValueError('Values, if provided, must be the same '
                                      'length as the number of control points '
                                      '(%s), got %s'
@@ -2285,7 +2285,7 @@ class _Interp2(object):
 
             def val(pt):
                 idx = np.where(control_points == pt)[0][0]
-                return [v[idx] for v in use_values]
+                return [v[idx] if v is not None else None for v in use_values]
             values = val
         self.values = values
         self._position = 0  # start at zero
@@ -2310,7 +2310,8 @@ class _Interp2(object):
             self._left = self.values(self.control_points[0])
             if len(self.control_points) == 1:
                 self._right = self._left
-        outs = [np.empty(v.shape + (n_pts,)) for v in self._left]
+        outs = [np.empty(v.shape + (n_pts,)) if v is not None else None
+                for v in self._left]
         n_used = 0
 
         # Left zero-order hold condition
@@ -2323,7 +2324,8 @@ class _Interp2(object):
             assert not used[this_sl].any()
             used[this_sl] = True
             for vi, v in enumerate(self._left):
-                outs[vi][..., :n_use] = v[..., np.newaxis]
+                if outs[vi] is not None:
+                    outs[vi][..., :n_use] = v[..., np.newaxis]
             self._position += n_use
             n_used += n_use
 
@@ -2377,9 +2379,10 @@ class _Interp2(object):
                 used[this_sl] = True
                 for vi, (left_, right_) in enumerate(zip(self._left,
                                                          self._right)):
-                    outs[vi][..., this_sl] = (
-                        left_[..., np.newaxis] * this_interp +
-                        right_[..., np.newaxis] * (1. - this_interp))
+                    if outs[vi] is not None:
+                        outs[vi][..., this_sl] = (
+                            left_[..., np.newaxis] * this_interp +
+                            right_[..., np.newaxis] * (1. - this_interp))
                 self._position += n_use
                 n_used += n_use
 
@@ -2393,7 +2396,8 @@ class _Interp2(object):
                 used[this_sl] = True
                 assert self._right is not None
                 for vi, v in enumerate(self._right):
-                    outs[vi][..., this_sl] = v[..., np.newaxis]
+                    if outs[vi] is not None:
+                        outs[vi][..., this_sl] = v[..., np.newaxis]
                 self._position += n_use
                 n_used += n_use
         assert self._position == stop
