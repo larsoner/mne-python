@@ -440,22 +440,15 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
         n_overlap = 0
         window = 'boxcar'
 
-    # st_fixed mode (or pass-through)
-    these_picks = meg_picks if st_only else meg_picks[good_picks]
-    use_correlation = st_correlation if st_fixed else None
-    tsss_pre = _COLA(partial(_do_tSSS, st_correlation=use_correlation,
-                             st_detrend=st_detrend),
-                     _Storer(raw_sss._data, picks=these_picks),
-                     len(raw_sss.times), st_duration, n_overlap,
-                     raw_sss.info['sfreq'], window)
-
-    # st_fixed is False (or pass-through)
-    use_correlation = None if st_fixed else st_correlation
-    tsss_post = _COLA(partial(_do_tSSS, st_correlation=use_correlation,
-                              st_detrend=st_detrend),
-                      _Storer(raw_sss._data, picks=meg_picks),
-                      len(raw_sss.times), st_duration, n_overlap,
-                      raw_sss.info['sfreq'], window)
+    if st_fixed and not st_only:
+        these_picks = meg_picks[good_picks]
+    else:
+        these_picks = meg_picks
+    tsss = _COLA(
+        partial(_do_tSSS, st_correlation=st_correlation,
+                st_detrend=st_detrend),
+        _Storer(raw_sss._data, picks=these_picks), len(raw_sss.times),
+        st_duration, n_overlap, raw_sss.info['sfreq'], window)
 
     #
     # Do the heavy lifting
@@ -481,28 +474,36 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
     # First pass: cross_talk, st_fixed=True
     read_lims = list(range(0, len(raw_sss.times), step)) + [len(raw_sss.times)]
     for ii, (start, stop) in enumerate(zip(read_lims[:-1], read_lims[1:])):
-        orig_data = raw_sss._data[meg_picks[good_picks], start:stop]
+        t_str = '%8.3f - %8.3f sec' % tuple(raw_sss.times[[start, stop - 1]])
+        ctc_data = raw_sss._data[meg_picks[good_picks], start:stop]
         if cross_talk is not None:
-            orig_data = ctc.dot(orig_data)
+            ctc_data = ctc.dot(ctc_data)
         # Apply the average transform and feed data to the tSSS pre-mc
         # operator, which will pass its results to the right place
-        in_data, resid, n_positions = mc.feed_avg(orig_data)
-        proc = raw_sss._data[meg_picks, start:stop] if st_only else orig_data
-        t_str = '%8.3f - %8.3f sec' % tuple(raw_sss.times[[start, stop - 1]])
-        tsss_pre.feed(proc, in_data, resid,
+        if st_fixed and st_correlation is not None:
+            in_data, resid, n_positions = mc.feed_avg(ctc_data)
+            if st_only:
+                proc = raw_sss._data[meg_picks, start:stop]
+            else:
+                proc = ctc_data
+            tsss.feed(proc, in_data, resid,
                       n_positions=n_positions, t_str=t_str)
+        else:
+            raw_sss._data[meg_picks[good_picks], start:stop] = ctc_data
 
     # Second pass: movement compensation, st_fixed=False
     for ii, (start, stop) in enumerate(zip(read_lims[:-1], read_lims[1:])):
+        t_str = '%8.3f - %8.3f sec' % tuple(raw_sss.times[[start, stop - 1]])
         data, orig_in_data, resid, pos_data, n_positions = mc.feed(
             raw_sss._data[meg_picks, start:stop], good_picks,
             head_pos, this_pos_quat, st_only)
         raw_sss._data[meg_picks, start:stop] = data
         if len(pos_picks) > 0:
             raw_sss._data[pos_picks, start:stop] = pos_data
-        tsss_post.feed(
-            raw_sss._data[meg_picks, start:stop], orig_in_data, resid,
-            n_positions=n_positions, t_str=t_str)
+        if not st_fixed and st_correlation is not None:
+            tsss.feed(
+                raw_sss._data[meg_picks, start:stop], orig_in_data, resid,
+                n_positions=n_positions, t_str=t_str)
 
     # Update info
     if not st_only:
