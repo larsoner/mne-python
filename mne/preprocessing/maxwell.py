@@ -627,13 +627,12 @@ class _MoveComp(object):
         for sl, left, right, l_interp in self.smooth.feed_generator(n_samp):
             good_data = data[good_picks, sl]
             l_sss, l_in, l_resid = left
-            r_sss, r_in, r_resid = right
             r_interp = 1. - l_interp if l_interp is not None else None
             if not st_only:
                 data[:, sl] = np.dot(l_sss, good_data)
                 if l_interp is not None:
                     data[:, sl] *= l_interp
-                    data[:, sl] += r_interp * np.dot(r_sss, good_data)
+                    data[:, sl] += r_interp * np.dot(right[0], good_data)
 
             # Reconstruct data using original location from external
             # and internal spaces and compute residual
@@ -642,8 +641,8 @@ class _MoveComp(object):
             if l_interp is not None:
                 in_data[:, sl] *= l_interp
                 resid_data[:, sl] *= l_interp
-                in_data[:, sl] += r_interp * np.dot(r_in, good_data)
-                resid_data[:, sl] += r_interp * np.dot(r_resid, good_data)
+                in_data[:, sl] += r_interp * np.dot(right[1], good_data)
+                resid_data[:, sl] += r_interp * np.dot(right[2], good_data)
         return data, in_data, resid_data, pos_data, n_pos
 
 
