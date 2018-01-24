@@ -46,7 +46,7 @@ def _log_ch(start, info, ch):
 @verbose
 def simulate_raw(raw, stc, trans, src, bem, cov='simple',
                  blink=False, ecg=False, chpi=False, head_pos=None,
-                 mindist=1.0, interp='cos2', iir_filter=None, n_jobs=1,
+                 mindist=1.0, interp='hann', iir_filter=None, n_jobs=1,
                  random_state=None, use_cps=True, verbose=None):
     u"""Simulate raw data.
 
@@ -101,7 +101,7 @@ def simulate_raw(raw, stc, trans, src, bem, cov='simple',
         Minimum distance between sources and the inner skull boundary
         to use during forward calculation.
     interp : str
-        Either 'hann', 'cos2', 'linear', or 'zero', the type of
+        Either 'hann' (default), 'linear', or 'zero', the type of
         forward-solution interpolation to use between forward solutions
         at different head positions.
     iir_filter : None | array

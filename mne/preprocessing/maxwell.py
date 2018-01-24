@@ -10,12 +10,6 @@ from functools import partial
 from math import factorial
 from os import path as op
 
-# Todo:
-# Change to use _check_lims
-# Change to use _Interp2
-# Fix logging messages
-# Speed up by only doing necessary calculations?
-
 import numpy as np
 from scipy import linalg
 
@@ -52,7 +46,8 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
                    st_correlation=0.98, coord_frame='head', destination=None,
                    regularize='in', ignore_ref=False, bad_condition='error',
                    head_pos=None, st_fixed=True, st_only=False, mag_scale=100.,
-                   st_overlap=None, st_detrend=False, verbose=None):
+                   st_overlap=None, st_detrend=False, mc_interp=None,
+                   verbose=None):
     u"""Apply Maxwell filter to data using multipole moments.
 
     .. warning:: Automatic bad channel detection is not currently implemented.
@@ -124,14 +119,12 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
         parameters as returned by e.g. `read_head_pos`.
 
         .. versionadded:: 0.12
-
     st_fixed : bool
         If True (default), do tSSS using the median head position during the
         ``st_duration`` window. This is the default behavior of MaxFilter
         and has been most extensively tested.
 
         .. versionadded:: 0.12
-
     st_only : bool
         If True, only tSSS (temporal) projection of MEG data will be
         performed on the output data. The non-tSSS parameters (e.g.,
@@ -145,7 +138,6 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
         :func:`mne.epochs.average_movements`.
 
         .. versionadded:: 0.12
-
     mag_scale : float | str
         The magenetometer scale-factor used to bring the magnetometers
         to approximately the same order of magnitude as the gradiometers
@@ -155,20 +147,23 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
         59.5 for VectorView).
 
         .. versionadded:: 0.13
-
     st_overlap : bool
         If True (default in 0.16), tSSS processing will use a constant
         overlap-add method. If False (default in 0.15), then
         non-overlapping windows will be used.
 
         .. versionadded:: 0.17
-
     st_detrend : bool
         If True, detrend data and residual before performing subspace
         correlation (default False).
 
         .. versionadded:: 0.17
+    mc_interp : str
+        Interpolation to use between adjacent time points in movement
+        compensation. Can be "zero" (default in 0.17; used by MaxFilter),
+        "linear", or "hann" (default in 0.18).
 
+        .. versionadded:: 0.17
     verbose : bool, str, int, or None
         If not None, override default verbose level (see :func:`mne.verbose`
         and :ref:`Logging documentation <tut_logging>` for more).
@@ -330,7 +325,7 @@ def maxwell_filter(raw, origin='auto', int_order=8, ext_order=3,
              'in 0.17. Set it explicitly to avoid this warning.',
              DeprecationWarning)
         st_overlap = False
-    mc = _MoveComp(head_pos, head_frame, raw)
+    mc = _MoveComp(head_pos, head_frame, raw, mc_interp)
     if len(mc.pos[0]) > 1 and not st_fixed:
         warn('st_fixed=False is untested, use with caution!')
     head_pos = _check_pos(head_pos, head_frame, raw)
@@ -561,6 +556,11 @@ class _MoveComp(object):
     def __init__(self, pos, head_frame, raw, interp='zero'):
         self.pos = _check_pos_2(pos, head_frame, raw)
         self.sfreq = raw.info['sfreq']
+        if interp is None:
+            warn('mc_interp defaults to "zero" in 0.17 but will change to '
+                 '"hann" in 0.18, set it explicitly to avoid this message.',
+                 DeprecationWarning)
+            interp = 'zero'
         self.smooth = _Interp2(self.pos[1], self.get_decomp_by_offset, interp)
 
     def get_decomp_by_offset(self, offset):
@@ -616,22 +616,35 @@ class _MoveComp(object):
 
     def feed(self, data, good_picks, head_pos, st_only):
         n_samp = data.shape[1]
-        sss_op, op_in, op_resid = self.smooth.feed(n_samp)
         pos_data, n_pos = _trans_lims(
             self.pos, self.offset,
             self.offset + data.shape[-1])[:2]
         self.offset += data.shape[-1]
 
-        # Do movement compensation on the data
-        good_data = data[good_picks]
-        if not st_only:
-            data[:] = einsum('vst,st->vt', sss_op, good_data)
+        # Do movement compensation on the data, with optional smoothing
+        in_data = np.empty_like(data)
+        resid_data = np.empty_like(data)
+        for sl, left, right, l_interp in self.smooth.feed_generator(n_samp):
+            good_data = data[good_picks, sl]
+            l_sss, l_in, l_resid = left
+            r_sss, r_in, r_resid = right
+            r_interp = 1. - l_interp if l_interp is not None else None
+            if not st_only:
+                data[:, sl] = np.dot(l_sss, good_data)
+                if l_interp is not None:
+                    data[:, sl] *= l_interp
+                    data[:, sl] += r_interp * np.dot(r_sss, good_data)
 
-        # Reconstruct data using original location from external
-        # and internal spaces and compute residual
-        in_data = einsum('vst,st->vt', op_in, good_data)
-        resid = einsum('vst,st->vt', op_resid, good_data)
-        return data, in_data, resid, pos_data, n_pos
+            # Reconstruct data using original location from external
+            # and internal spaces and compute residual
+            in_data[:, sl] = np.dot(l_in, good_data)
+            resid_data[:, sl] = np.dot(l_resid, good_data)
+            if l_interp is not None:
+                in_data[:, sl] *= l_interp
+                resid_data[:, sl] *= l_interp
+                in_data[:, sl] += r_interp * np.dot(r_in, good_data)
+                resid_data[:, sl] += r_interp * np.dot(r_resid, good_data)
+        return data, in_data, resid_data, pos_data, n_pos
 
 
 def _trans_lims(pos, start, stop):

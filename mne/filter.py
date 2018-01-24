@@ -2238,7 +2238,7 @@ class _Interp2(object):
         Callable that takes the control point and returns a list of
         arrays that must be interpolated.
     interp : str
-        Can be 'zero', 'linear', 'hann', or 'cos2'.
+        Can be 'zero', 'linear', 'hann', or 'cos2' (same as hann).
 
     Notes
     -----
@@ -2298,8 +2298,8 @@ class _Interp2(object):
                              % (known_types, interp))
         self._interp = interp
 
-    def feed(self, n_pts):
-        """Feed data and get interpolated values."""
+    def feed_generator(self, n_pts):
+        """Feed data and get interpolators as a generator."""
         self.n_last = 0
         n_pts = operator.index(n_pts)
         original_position = self._position
@@ -2311,8 +2311,6 @@ class _Interp2(object):
             self._left = self.values(self.control_points[0])
             if len(self.control_points) == 1:
                 self._right = self._left
-        outs = [np.empty(v.shape + (n_pts,)) if v is not None else None
-                for v in self._left]
         n_used = 0
 
         # Left zero-order hold condition
@@ -2324,9 +2322,7 @@ class _Interp2(object):
             assert used[this_sl].size == n_use
             assert not used[this_sl].any()
             used[this_sl] = True
-            for vi, v in enumerate(self._left):
-                if outs[vi] is not None:
-                    outs[vi][..., :n_use] = v[..., np.newaxis]
+            yield [this_sl, self._left, None, None]
             self._position += n_use
             n_used += n_use
             self.n_last += 1
@@ -2359,14 +2355,11 @@ class _Interp2(object):
                 elif self._interp == 'linear':
                     self._use_interp = np.linspace(1., 0., interp_span,
                                                    endpoint=False)
-                elif self._interp == 'cos2':
+                else:  # self._interp in ('cos2', 'hann'):
                     self._use_interp = np.cos(
                         np.linspace(0, np.pi / 2., interp_span,
                                     endpoint=False))
                     self._use_interp *= self._use_interp
-                else:  # hann
-                    self._use_interp = np.hanning(
-                        interp_span * 2 + 1)[interp_span:-1]
             n_use = min(stop, right_point) - self._position
             if n_use > 0:
                 logger.debug('  Interp %s %s (%s-%s)' % (self._interp, n_use,
@@ -2383,15 +2376,7 @@ class _Interp2(object):
                 assert used[this_sl].size == n_use
                 assert not used[this_sl].any()
                 used[this_sl] = True
-                for vi, (left_, right_) in enumerate(zip(self._left,
-                                                         self._right)):
-                    if outs[vi] is not None:
-                        if this_interp is None:
-                            outs[vi][..., this_sl] = left_[..., np.newaxis]
-                        else:
-                            outs[vi][..., this_sl] = (
-                                left_[..., np.newaxis] * this_interp +
-                                right_[..., np.newaxis] * (1. - this_interp))
+                yield [this_sl, self._left, self._right, this_interp]
                 self._position += n_use
                 n_used += n_use
 
@@ -2404,9 +2389,7 @@ class _Interp2(object):
                 assert not used[this_sl].any()
                 used[this_sl] = True
                 assert self._right is not None
-                for vi, v in enumerate(self._right):
-                    if outs[vi] is not None:
-                        outs[vi][..., this_sl] = v[..., np.newaxis]
+                yield [this_sl, self._right, None, None]
                 self._position += n_use
                 n_used += n_use
                 self.n_last += 1
@@ -2414,7 +2397,25 @@ class _Interp2(object):
         assert n_used == n_pts
         assert used.all()
         assert self._position == original_position + n_pts
-        return outs
+
+    def feed(self, n_pts):
+        """Feed data and get interpolated values."""
+        # Convenience function for assembly
+        out_arrays = None
+        for o in self.feed_generator(n_pts):
+            if out_arrays is None:
+                out_arrays = [np.empty(v.shape + (n_pts,))
+                              if v is not None else None for v in o[1]]
+            for ai, arr in enumerate(out_arrays):
+                if arr is not None:
+                    if o[3] is None:
+                        arr[..., o[0]] = o[1][ai][..., np.newaxis]
+                    else:
+                        arr[..., o[0]] = (
+                            o[1][ai][..., np.newaxis] * o[3] +
+                            o[2][ai][..., np.newaxis] * (1. - o[3]))
+        assert out_arrays is not None
+        return out_arrays
 
 
 ###############################################################################

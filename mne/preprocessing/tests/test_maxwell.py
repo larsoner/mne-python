@@ -121,7 +121,8 @@ def read_crop(fname, lims=(0, None)):
     return read_raw_fif(fname, allow_maxshield='yes').crop(*lims)
 
 
-std_kwargs = dict(st_detrend=False, st_overlap=False)
+# These mimic what is done in MaxFilter
+std_kwargs = dict(st_detrend=False, st_overlap=False, mc_interp='zero')
 
 
 @pytest.mark.slowtest
@@ -214,6 +215,25 @@ def test_movement_compensation():
         **std_kwargs)
     assert_meg_snr(raw_sss_tweak, raw_sss.copy().crop(0, 0.05), 1.4, 8.,
                    chpi_med_tol=5)
+
+
+@testing.requires_testing_data
+def test_movement_compensation_smooth():
+    """Test movement compensation with smooth interpolation."""
+    lims = (0, 10)
+    raw = read_crop(raw_fname, lims).load_data()
+    head_pos = read_head_pos(pos_fname)
+    raw_sss = maxwell_filter(raw, head_pos=head_pos, origin=mf_head_origin,
+                             regularize=None, bad_condition='ignore',
+                             **std_kwargs)
+    assert_meg_snr(raw_sss, read_crop(sss_movecomp_fname, lims),
+                   3.9, 10.9, chpi_med_tol=58)
+    raw_sss = maxwell_filter(raw, head_pos=head_pos, origin=mf_head_origin,
+                             regularize=None, bad_condition='ignore',
+                             st_overlap=False, st_detrend=False,
+                             mc_interp='hann')
+    assert_meg_snr(raw_sss, read_crop(sss_movecomp_fname, lims),
+                   2.49, 9.8, chpi_med_tol=58)
 
 
 @pytest.mark.slowtest
