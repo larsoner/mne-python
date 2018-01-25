@@ -566,7 +566,7 @@ class _MoveComp(object):
     def get_decomp_by_offset(self, offset):
         idx = np.where(self.pos[1] == offset)[0][0]
         dev_head_t = self.pos[0][idx]
-        t = idx / self.sfreq
+        t = offset / self.sfreq
         S_decomp, pS_decomp, reg_moments, n_use_in = \
             self.get_decomp(dev_head_t, t=t)
         S_recon_reg = self.S_recon.take(
@@ -603,7 +603,7 @@ class _MoveComp(object):
                            avg_quat[3:][:, np.newaxis]]),
                 [[0., 0., 0., 1.]]])
             S_decomp_st, pS_decomp_st, _, n_use_in_st = \
-                self.get_decomp(avg_trans, t=0.)
+                self.get_decomp(avg_trans, t=self.avg_offset / self.sfreq)
             self.op_in = np.dot(S_decomp_st[:, :n_use_in_st],
                                 pS_decomp_st[:n_use_in_st])
             self.op_resid = np.eye(len(self.op_in)) - self.op_in - np.dot(
