@@ -415,38 +415,40 @@ class CombineMarkersPanel(HasTraits):  # noqa: D401
     def __init__(self, *args, **kwargs):  # noqa: D102
         super(CombineMarkersPanel, self).__init__(*args, **kwargs)
 
-        m = self.model
-        m.sync_trait('distance', self, 'distance', mutual=False)
+        self.model.sync_trait('distance', self, 'distance', mutual=False)
 
         self.mrk1_obj = PointObject(scene=self.scene,
                                     color=(0.608, 0.216, 0.216),
                                     point_scale=self.scale)
-        m.mrk1.sync_trait('enabled', self.mrk1_obj, 'visible', mutual=False)
+        self.model.mrk1.sync_trait(
+            'enabled', self.mrk1_obj, 'visible', mutual=False)
 
         self.mrk2_obj = PointObject(scene=self.scene,
                                     color=(0.216, 0.608, 0.216),
                                     point_scale=self.scale)
-        m.mrk2.sync_trait('enabled', self.mrk2_obj, 'visible', mutual=False)
+        self.model.mrk2.sync_trait(
+            'enabled', self.mrk2_obj, 'visible', mutual=False)
 
         self.mrk3_obj = PointObject(scene=self.scene,
                                     color=(0.588, 0.784, 1.),
                                     point_scale=self.scale)
-        m.mrk3.sync_trait('enabled', self.mrk3_obj, 'visible', mutual=False)
+        self.model.mrk3.sync_trait(
+            'enabled', self.mrk3_obj, 'visible', mutual=False)
 
-    @on_trait_change('m:mrk1:points,trans')
+    @on_trait_change('model:mrk1:points,trans')
     def _update_mrk1(self):
         if self.mrk1_obj is not None:
             self.mrk1_obj.points = apply_trans(self.trans,
-                                               self.m.mrk1.points)
+                                               self.model.mrk1.points)
 
-    @on_trait_change('m:mrk2:points,trans')
+    @on_trait_change('model:mrk2:points,trans')
     def _update_mrk2(self):
         if self.mrk2_obj is not None:
             self.mrk2_obj.points = apply_trans(self.trans,
-                                               self.m.mrk2.points)
+                                               self.model.mrk2.points)
 
-    @on_trait_change('m:mrk3:points,trans')
+    @on_trait_change('model:mrk3:points,trans')
     def _update_mrk3(self):
         if self.mrk3_obj is not None:
             self.mrk3_obj.points = apply_trans(self.trans,
-                                               self.m.mrk3.points)
+                                               self.model.mrk3.points)
