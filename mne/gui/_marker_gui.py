@@ -9,21 +9,19 @@ import sys
 
 import numpy as np
 
-from mayavi.core.ui.mayavi_scene import MayaviScene
 from mayavi.tools.mlab_scene_model import MlabSceneModel
 from pyface.api import confirm, error, FileDialog, OK, YES
 from traits.api import (HasTraits, HasPrivateTraits, on_trait_change,
                         cached_property, Instance, Property, Array, Bool,
                         Button, Enum, File, Float, List, Str)
 from traitsui.api import View, Item, HGroup, VGroup, CheckListEditor
-from traitsui.menu import Action, CancelButton, NoButtons
-from tvtk.pyface.scene_editor import SceneEditor
+from traitsui.menu import Action, CancelButton
 
 from ..transforms import apply_trans, rotation, translation
 from ..coreg import fit_matched_points
 from ..io.kit import read_mrk
 from ..io.meas_info import _write_dig_points
-from ._viewer import HeadViewController, headview_borders, PointObject
+from ._viewer import PointObject
 
 
 backend_is_wx = False  # is there a way to determine this?
@@ -452,35 +450,3 @@ class CombineMarkersPanel(HasTraits):  # noqa: D401
         if self.mrk3_obj is not None:
             self.mrk3_obj.points = apply_trans(self.trans,
                                                self.m.mrk3.points)
-
-
-class CombineMarkersFrame(HasTraits):
-    """GUI for interpolating between two KIT marker files.
-
-    Parameters
-    ----------
-    mrk1, mrk2 : str
-        Path to pre- and post measurement marker files (*.sqd) or empty string.
-    """
-
-    model = Instance(CombineMarkersModel, ())
-    scene = Instance(MlabSceneModel, ())
-    headview = Instance(HeadViewController)
-    panel = Instance(CombineMarkersPanel)
-
-    def _headview_default(self):
-        return HeadViewController(scene=self.scene, system='ALS')
-
-    def _panel_default(self):
-        return CombineMarkersPanel(model=self.model, scene=self.scene)
-
-    view = View(HGroup(Item('scene',
-                            editor=SceneEditor(scene_class=MayaviScene),
-                            dock='vertical'),
-                       VGroup(headview_borders,
-                              Item('panel', style="custom"),
-                              show_labels=False),
-                       show_labels=False,
-                       ),
-                width=1100, resizable=True,
-                buttons=NoButtons)
