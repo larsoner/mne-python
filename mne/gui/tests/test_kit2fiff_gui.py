@@ -156,9 +156,22 @@ def test_kit2fiff_gui():
         assert_equal(frame.model.stim_threshold, 10.)
         assert_equal(frame.model.stim_chs, 'save this!')
 
+        # set and reset marker file
+        points = [[-0.084612,  0.021582, -0.056144],
+                  [ 0.080425,  0.021995, -0.061171],
+                  [-0.000787,  0.105530,  0.014168],
+                  [-0.047943,  0.091835,  0.010240],
+                  [ 0.042976,  0.094380,  0.010807]]
+        assert_array_equal(frame.marker_panel.mrk1_obj.points, 0)
+        assert_array_equal(frame.marker_panel.mrk3_obj.points, 0)
         frame.model.markers.mrk1.file = mrk_pre_path
+        assert_allclose(frame.marker_panel.mrk1_obj.points, points, atol=1e-6)
+        assert_allclose(frame.marker_panel.mrk3_obj.points, points, atol=1e-6)
         frame.marker_panel.mrk1_obj.label = True
         frame.marker_panel.mrk1_obj.label = False
+        frame.kit2fiff_panel.clear_all = True
+        assert_array_equal(frame.marker_panel.mrk1_obj.points, 0)
+        assert_array_equal(frame.marker_panel.mrk3_obj.points, 0)
         ui.dispose()
 
         gui.process_events()
