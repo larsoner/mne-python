@@ -25,6 +25,7 @@ from ..io.pick import (channel_type, pick_info, pick_types, _picks_by_type,
 from ..annotations import _handle_meas_date
 
 
+HEAD_SIZE_DEFAULT = 0.095  # in [m]
 DEPRECATED_PARAM = object()
 
 
