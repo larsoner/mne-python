@@ -503,6 +503,14 @@ skip_by_annotation : str | list of str
     or :meth:`mne.io.Raw.append`, or separated during acquisition.
     To disable, provide an empty list.
 """
+docdict['maxwell_mc_interp'] = """
+mc_interp : str
+    Interpolation to use between adjacent time points in movement
+    compensation. Can be "zero" (default in 0.21; used by MaxFilter),
+    "linear", or "hann" (default in 0.22).
+
+    .. versionadded:: 0.21
+"""
 
 # Rank
 docdict['rank'] = """
