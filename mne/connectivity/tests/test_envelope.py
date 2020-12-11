@@ -18,7 +18,7 @@ def _compute_corrs_orig(data):
     data = np.transpose(data, (1, 2, 0))
     corr_mats = np.empty((data.shape[0], data.shape[0], data.shape[2]))
     for index, label_data in enumerate(data):
-        label_data_orth = np.imag(label_data * (data.conj() / np.abs(data)))
+        label_data_orth = np.imag(label_data.conj() / np.abs(label_data) * data)
         label_data_orig = np.abs(label_data)
         label_data_cont = np.transpose(
             np.dstack((label_data_orig, np.transpose(label_data_orth,

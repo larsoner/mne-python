@@ -105,12 +105,12 @@ def envelope_correlation(data, combine='mean', orthogonalize="pairwise",
         data_mag_std = np.linalg.norm(data_mag_nomean, axis=-1)
         data_mag_std[data_mag_std == 0] = 1
         corr = np.empty((n_nodes, n_nodes))
-        for li, label_data in enumerate(epoch_data):
+        for li, label_data_conj_scaled in enumerate(data_conj_scaled):
             if orthogonalize is False:  # the new code
                 label_data_orth = data_mag
                 label_data_orth_std = data_mag_std
             else:
-                label_data_orth = (label_data * data_conj_scaled).imag
+                label_data_orth = (label_data_conj_scaled * epoch_data).imag
                 label_data_orth -= np.mean(label_data_orth, axis=-1,
                                            keepdims=True)
                 label_data_orth_std = np.linalg.norm(label_data_orth, axis=-1)
