@@ -20,6 +20,7 @@
 # License: BSD-3-Clause
 
 from functools import partial
+import logging
 
 import numpy as np
 import itertools
@@ -549,13 +550,15 @@ def _fit_coil_order_dev_head_trans(dev_pnts, head_pnts, bias=True):
 
 @verbose
 def _setup_hpi_amplitude_fitting(info, t_window, remove_aliased=False,
-                                 ext_order=1, allow_empty=False, verbose=None):
+                                 ext_order=1, allow_empty=False, *,
+                                 include_slope=False, verbose=None):
     """Generate HPI structure for HPI localization."""
     # grab basic info.
     on_missing = 'raise' if not allow_empty else 'ignore'
     hpi_freqs, hpi_pick, hpi_ons = get_chpi_info(info, on_missing=on_missing)
 
     _validate_type(t_window, (str, 'numeric'), 't_window')
+    _validate_type(include_slope, bool, 'inculde_slope')
     if info['line_freq'] is not None:
         line_freqs = np.arange(info['line_freq'], info['sfreq'] / 3.,
                                info['line_freq'])
@@ -590,8 +593,14 @@ def _setup_hpi_amplitude_fitting(info, t_window, remove_aliased=False,
         raise ValueError('t_window (%s) must be > 0' % (t_window,))
     logger.info('Using time window: %0.1f ms' % (1000 * t_window,))
     window_nsamp = np.rint(t_window * info['sfreq']).astype(int)
-    model = _setup_hpi_glm(hpi_freqs, line_freqs, info['sfreq'], window_nsamp)
-    inv_model = np.linalg.pinv(model)
+    model = _setup_hpi_glm(hpi_freqs, line_freqs, info['sfreq'], window_nsamp,
+                           include_slope=include_slope)
+    u, s, v = np.linalg.svd(model, full_matrices=False)
+    keep = s >= s[0] * 1e-6
+    inv_model = v[keep].T @ (u[:, keep].T / s[keep, np.newaxis])
+    cond = s[0] / s[keep][-1]
+    logger.debug(f'HPI model condition number ({keep.sum()} / {len(keep)} '
+                 f'components): {cond:0.1f}')
     inv_model_reord = _reorder_inv_model(inv_model, len(hpi_freqs))
     proj, proj_op, meg_picks = _setup_ext_proj(info, ext_order)
     # include mag and grad picks separately, for SNR computations
@@ -606,15 +615,21 @@ def _setup_hpi_amplitude_fitting(info, t_window, remove_aliased=False,
     return hpi
 
 
-def _setup_hpi_glm(hpi_freqs, line_freqs, sfreq, window_nsamp):
+def _setup_hpi_glm(hpi_freqs, line_freqs, sfreq, window_nsamp, *,
+                   include_slope=False):
     """Initialize a general linear model for HPI amplitude estimation."""
     slope = np.linspace(-0.5, 0.5, window_nsamp)[:, np.newaxis]
     radians_per_sec = 2 * np.pi * np.arange(window_nsamp, dtype=float) / sfreq
     f_t = hpi_freqs[np.newaxis, :] * radians_per_sec[:, np.newaxis]
     l_t = line_freqs[np.newaxis, :] * radians_per_sec[:, np.newaxis]
-    model = [np.sin(f_t), np.cos(f_t),    # hpi freqs
-             np.sin(l_t), np.cos(l_t),    # line freqs
-             slope, np.ones_like(slope)]  # drift, DC
+    model = [np.sin(f_t), np.cos(f_t)]    # hpi freqs
+    if include_slope:
+        sl = np.linspace(0, 1, window_nsamp)[:, np.newaxis]
+        model.extend([model[0] * sl, model[1] * sl])
+        # sl = np.hanning(window_nsamp)[:, np.newaxis]
+        # model.extend([model[0] * sl, model[1] * sl])
+    model.extend([np.sin(l_t), np.cos(l_t)])    # line freqs
+    model.extend([slope, np.ones_like(slope)])  # drift, DC
     return np.hstack(model)
 
 
@@ -1261,7 +1276,8 @@ def _chpi_locs_to_times_dig(chpi_locs):
 
 @verbose
 def filter_chpi(raw, include_line=True, t_step=0.01, t_window='auto',
-                ext_order=1, allow_line_only=False, verbose=None):
+                ext_order=1, allow_line_only=False, *,
+                include_slope=False, verbose=None):
     """Remove cHPI and line noise from data.
 
     .. note:: This function will only work properly if cHPI was on
@@ -1282,6 +1298,12 @@ def filter_chpi(raw, include_line=True, t_step=0.01, t_window='auto',
         which only allows the function to run when cHPI information is present.
 
         .. versionadded:: 0.20
+    include_slope : bool
+        If True (default False), include a term corresponding to each HPI
+        frequency multiplied by a linear slope. This can be useful for datasets
+        with a lot of rapid head movement.
+
+        .. versionadded:: 1.0
     %(verbose)s
 
     Returns
@@ -1310,11 +1332,12 @@ def filter_chpi(raw, include_line=True, t_step=0.01, t_window='auto',
                            'None, consider setting it to the line frequency')
     hpi = _setup_hpi_amplitude_fitting(
         raw.info, t_window, remove_aliased=True, ext_order=ext_order,
-        allow_empty=allow_line_only, verbose=False)
+        allow_empty=allow_line_only, include_slope=include_slope,
+        verbose=False if logger.level > logging.DEBUG else None)
 
     fit_idxs = np.arange(0, len(raw.times) + hpi['n_window'] // 2, n_step)
     n_freqs = len(hpi['freqs'])
-    n_remove = 2 * n_freqs
+    n_remove = 2 * (1 + include_slope) * n_freqs
     meg_picks = pick_types(raw.info, meg=True, exclude=())  # filter all chs
     n_times = len(raw.times)
 
@@ -1323,12 +1346,14 @@ def filter_chpi(raw, include_line=True, t_step=0.01, t_window='auto',
         n_remove += 2 * len(hpi['line_freqs'])
         msg += ' and %s line harmonic' % len(hpi['line_freqs'])
     msg += ' frequencies from %s MEG channels' % len(meg_picks)
+    logger.debug(f'Removing {n_remove} components')
 
     recon = np.dot(hpi['model'][:, :n_remove], hpi['inv_model'][:n_remove]).T
     logger.info(msg)
     chunks = list()  # the chunks to subtract
     last_endpt = 0
     pb = ProgressBar(fit_idxs, mesg='Filtering')
+    safe = np.ones(len(raw.times), bool)
     for ii, midpt in enumerate(pb):
         left_edge = midpt - hpi['n_window'] // 2
         time_sl = slice(max(left_edge, 0),
@@ -1336,7 +1361,7 @@ def filter_chpi(raw, include_line=True, t_step=0.01, t_window='auto',
         this_len = time_sl.stop - time_sl.start
         if this_len == hpi['n_window']:
             this_recon = recon
-        else:  # first or last window
+        else:  # first or last few windows
             model = hpi['model'][:this_len]
             inv_model = np.linalg.pinv(model)
             this_recon = np.dot(model[:, :n_remove], inv_model[:n_remove]).T
@@ -1357,8 +1382,12 @@ def filter_chpi(raw, include_line=True, t_step=0.01, t_window='auto',
             next_left_edge = np.inf
         while len(chunks) > 0 and chunks[0][0] <= next_left_edge:
             right_edge, chunk = chunks.pop(0)
-            raw._data[meg_picks,
-                      right_edge - chunk.shape[1]:right_edge] -= chunk
+            left_edge = right_edge - chunk.shape[1]
+            assert safe[left_edge:right_edge].all(), (~safe).sum()
+            raw._data[meg_picks, left_edge:right_edge] -= chunk
+            safe[left_edge:right_edge] = False
+
+    assert not safe.any(), safe.sum()  # all processed
     return raw
 
 

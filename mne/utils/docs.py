@@ -860,8 +860,10 @@ Decimation can be done multiple times. For example,
 # cHPI
 docdict['chpi_t_window'] = """
 t_window : float
-    Time window to use to estimate the amplitudes, default is
-    0.2 (200 ms).
+    Time window to use to estimate the amplitudes.
+    Default (``'auto'``) is the larger of a) 5 cycles of the lowest cHPI and
+    line noise frequencies, and b) the reciprocal of the minimum difference
+    between cHPI frequencies.
 """
 docdict['chpi_ext_order'] = """
 ext_order : int
