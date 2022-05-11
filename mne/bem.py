@@ -1674,6 +1674,7 @@ _bem_surf_name = {
     FIFF.FIFFV_BEM_SURF_ID_SKULL: 'outer skull',
     FIFF.FIFFV_BEM_SURF_ID_HEAD: 'outer skin ',
     FIFF.FIFFV_BEM_SURF_ID_UNKNOWN: 'unknown    ',
+    FIFF.FIFFV_MNE_SURF_MEG_HELMET: 'MEG helmet ',
 }
 _sm_surf_name = {
     FIFF.FIFFV_BEM_SURF_ID_BRAIN: 'brain',
@@ -1681,6 +1682,7 @@ _sm_surf_name = {
     FIFF.FIFFV_BEM_SURF_ID_SKULL: 'outer skull',
     FIFF.FIFFV_BEM_SURF_ID_HEAD: 'outer skin ',
     FIFF.FIFFV_BEM_SURF_ID_UNKNOWN: 'unknown    ',
+    FIFF.FIFFV_MNE_SURF_MEG_HELMET: 'helmet',
 }
 
 
@@ -1767,7 +1769,8 @@ def _write_bem_surfaces_block(fid, surfs):
     """Write bem surfaces to open file handle."""
     for surf in surfs:
         start_block(fid, FIFF.FIFFB_BEM_SURF)
-        write_float(fid, FIFF.FIFF_BEM_SIGMA, surf['sigma'])
+        if 'sigma' in surf:
+            write_float(fid, FIFF.FIFF_BEM_SIGMA, surf['sigma'])
         write_int(fid, FIFF.FIFF_BEM_SURF_ID, surf['id'])
         write_int(fid, FIFF.FIFF_MNE_COORD_FRAME, surf['coord_frame'])
         write_int(fid, FIFF.FIFF_BEM_SURF_NNODE, surf['np'])
