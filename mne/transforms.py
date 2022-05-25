@@ -1822,3 +1822,47 @@ def apply_volume_registration(moving, static, reg_affine, sdr_morph=None,
     reg_img = SpatialImage(reg_data, static_affine)
     logger.info('[done]')
     return reg_img
+
+
+class _MatchedDisplacementFieldInterpolator:
+    """Interpolate from matched points using a displacement field in ND.
+
+    For a demo, see
+    https://gist.github.com/larsoner/fbe32d57996848395854d5e59dff1e10
+    and related tests.
+    """
+
+    def __init__(self, fro, to):
+        from scipy.interpolate import LinearNDInterpolator
+        fro = np.array(fro, float)
+        to = np.array(to, float)
+        assert fro.shape == to.shape
+        assert fro.ndim == 2
+        # this restriction is only necessary because it's what
+        # _fit_matched_points requires
+        assert fro.shape[1] == 3
+
+        # Prealign using affine + uniform scaling
+        trans, scale = _fit_matched_points(fro, to, scale=True)
+        trans = _quat_to_affine(trans)
+        trans[:3, :3] *= scale
+        self._affine = trans
+        fro = apply_trans(trans, fro)
+
+        # Add points at extrema
+        delta = (to.max(axis=0) - to.min(axis=0)) / 2.
+        extrema = np.array([fro.min(axis=0) - delta, fro.max(axis=0) + delta])
+        self._extrema = np.array(
+            np.meshgrid(*extrema.T)).T.reshape(-1, fro.shape[-1])
+        fro_concat = np.concatenate((fro, self._extrema))
+        to_concat = np.concatenate((to, self._extrema))
+
+        # Compute the interpolator (which internally uses Delaunay)
+        self._interp = LinearNDInterpolator(fro_concat, to_concat)
+
+    def __call__(self, x):
+        assert x.ndim in (1, 2) and x.shape[-1] == 3
+        singleton = x.ndim == 1
+        out = self._interp(apply_trans(self._affine, x))
+        out = out[0] if singleton else out
+        return out
