@@ -845,3 +845,34 @@ def test_plot_ch_adjacency():
     msg = "Editing a 3d adjacency plot is not supported."
     with pytest.raises(ValueError, match=msg):
         plot_ch_adjacency(info, adj, ch_names, kind='3d', edit=True)
+
+
+def test_rename_fnirs():
+    """Test that fNIRS channels can be renamed properly."""
+    ch_names = list()
+    ch_types = list()
+    locs = list()
+    rng = np.random.RandomState(0)  # don't make collinear
+    for source in range(1, 11):
+        sl = np.r_[rng.rand(1) / 100., source / 10., rng.rand(1) / 100.]
+        for detector in range(1, 11):
+            dl = np.r_[detector / 10., rng.rand(2) / 100.]
+            for kind in ('hbo', 'hbr'):
+                ch_names.append(f'S{source}_D{detector} {kind}')
+                ch_types.append('fnirs_od')
+                locs.append(np.r_[sl / 2. + dl / 2., sl, dl, 0., 0., 0.])
+    assert len(ch_names) == 200
+    info = create_info(ch_names, 10., ch_types)
+    for ch, loc in zip(info['chs'], locs):
+        ch['loc'][:] = loc
+    evoked = EvokedArray(
+        np.random.RandomState(0).randn(len(ch_names), 1), info)
+    fig = evoked.plot_topomap(show_names=True, times=evoked.times)
+    texts = fig.axes[0].texts
+    assert len(texts) == len(ch_names) // 2
+    texts = [t.get_text() for t in texts]
+    want = list()
+    for ch_name in ch_names[::2]:
+        ch_name = ch_name.split(' ')[0]
+        want.append(f'{ch_name}x{ch_name}')
+    assert texts == want

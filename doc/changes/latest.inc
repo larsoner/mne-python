@@ -60,6 +60,7 @@ Bugs
 - Fix bug in :func:`mne.decoding.TimeFrequency` that prevented cloning if constructor arguments were modified (:gh:`11004` by :newcontrib:`Daniel Carlström Schad`)
 - Fix bug in ``repr`` of decoding estimator classes (e.g., :class:`mne.decoding.SlidingEstimator`) where the parameters where not stored in the result string but instead just printed to ``sys.stdout`` (:gh:`11190` by :newcontrib:`Dominik Wetzel`)
 - Document ``height`` and ``weight`` keys of  ``subject_info`` entry in :class:`mne.Info` (:gh:`11019` by :newcontrib:`Sena Er`)
+- Fix bug in :meth:`mne.viz.plot_topomap` and related functions/methods where fNIRS channel names were errantly truncated during plotting (:gh:`11138` by :newcontrib:`John Griffiths`)
 - Fix bug in :class:`mne.viz.Brain` constructor where the first argument was named ``subject_id`` instead of ``subject`` (:gh:`11049` by `Eric Larson`_)
 - Fix bug in :ref:`mne coreg` where the MEG helmet position was not updated during ICP fitting (:gh:`11084` by `Eric Larson`_)
 - Fix bug in :func:`~mne.io.read_raw_curry`, and :func:`~mne.io.read_raw_cnt` where digitization points were not read properly (:gh:`11145` by `Eric Larson`_)

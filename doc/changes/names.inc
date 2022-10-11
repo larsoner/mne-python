@@ -214,6 +214,8 @@
 
 .. _Johannes Niediek: https://github.com/jniediek
 
+.. _John Griffiths: https://www.grifflab.com
+
 .. _John Samuelsson: https://github.com/johnsam7
 
 .. _John Veillette: https://psychology.uchicago.edu/directory/john-veillette
