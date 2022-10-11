@@ -37,8 +37,9 @@ from .utils import (check_fname, logger, verbose, check_version, _time_mask,
                     warn, copy_function_doc_to_method_doc, _pl,
                     _undo_scaling_cov, _scaled_array, _validate_type,
                     _check_option, eigh, fill_doc, _on_missing,
-                    _check_on_missing, _check_fname)
+                    _check_on_missing, _check_fname, _verbose_safe_false)
 from . import viz
+from .viz.utils import _warn_deprecated_vmin_vmax
 
 from .fixes import (BaseEstimator, EmpiricalCovariance, _logdet,
                     empirical_covariance, log_likelihood)
@@ -68,9 +69,10 @@ def _get_tslice(epochs, tmin, tmax):
 class Covariance(dict):
     """Noise covariance matrix.
 
-    .. warning:: This class should not be instantiated directly, but
-                 instead should be created using a covariance reading or
-                 computation function.
+    .. note::
+        This class should not be instantiated directly via
+        ``mne.Covariance(...)``. Instead, use one of the functions
+        listed in the See Also section below.
 
     Parameters
     ----------
@@ -252,15 +254,15 @@ class Covariance(dict):
                                  show, verbose)
 
     @verbose
-    def plot_topomap(self, info, ch_type=None, vmin=None,
-                     vmax=None, cmap=None, sensors=True, colorbar=True,
-                     scalings=None, units=None, res=64,
-                     size=1, cbar_fmt="%3.1f",
-                     proj=False, show=True, show_names=False, title=None,
-                     mask=None, mask_params=None, outlines='head',
-                     contours=6, image_interp=_INTERPOLATION_DEFAULT,
-                     axes=None, extrapolate=_EXTRAPOLATE_DEFAULT, sphere=None,
-                     border=_BORDER_DEFAULT, noise_cov=None, verbose=None):
+    def plot_topomap(
+            self, info, ch_type=None, *, scalings=None, proj=False,
+            noise_cov=None, sensors=True, show_names=False, mask=None,
+            mask_params=None, contours=6, outlines='head', sphere=None,
+            image_interp=_INTERPOLATION_DEFAULT,
+            extrapolate=_EXTRAPOLATE_DEFAULT, border=_BORDER_DEFAULT, res=64,
+            size=1, cmap=None, vlim=(None, None), vmin=None, vmax=None,
+            cnorm=None, colorbar=True, cbar_fmt='%3.1f', units=None,
+            axes=None, title=None, show=True, verbose=None):
         """Plot a topomap of the covariance diagonal.
 
         Parameters
@@ -269,31 +271,46 @@ class Covariance(dict):
         %(ch_type_topomap)s
 
             .. versionadded:: 0.21
-        %(vmin_vmax_topomap)s
-        %(cmap_topomap)s
-        %(sensors_topomap)s
-        %(colorbar_topomap)s
         %(scalings_topomap)s
-        %(units_topomap)s
-        %(res_topomap)s
-        %(size_topomap)s
-        %(cbar_fmt_topomap)s
         %(proj_plot)s
-        %(show)s
-        %(show_names_topomap)s
-        %(title_none)s
-        %(mask_topomap)s
-        %(mask_params_topomap)s
-        %(outlines_topomap)s
-        %(contours_topomap)s
-        %(image_interp_topomap)s
-        %(axes_cov_plot_topomap)s
-        %(extrapolate_topomap)s
-        %(sphere_topomap_auto)s
-        %(border_topomap)s
         noise_cov : instance of Covariance | None
             If not None, whiten the instance with ``noise_cov`` before
             plotting.
+        %(sensors_topomap)s
+        %(show_names_topomap)s
+        %(mask_topomap)s
+        %(mask_params_topomap)s
+        %(contours_topomap)s
+        %(outlines_topomap)s
+        %(sphere_topomap_auto)s
+        %(image_interp_topomap)s
+        %(extrapolate_topomap)s
+        %(border_topomap)s
+        %(res_topomap)s
+        %(size_topomap)s
+        %(cmap_topomap)s
+        %(vlim_plot_topomap)s
+
+            .. versionadded:: 1.2
+        %(vmin_vmax_topomap)s
+
+            .. deprecated:: v1.2
+               The ``vmin`` and ``vmax`` parameters will be removed in version
+               1.3. Please use the ``vlim`` parameter instead.
+        %(cnorm)s
+
+            .. versionadded:: 1.2
+        %(colorbar_topomap)s
+        %(cbar_fmt_topomap)s
+        %(units_topomap_evoked)s
+        %(axes_cov_plot_topomap)s
+        %(title_none)s
+
+            .. deprecated:: v1.2
+               The ``title`` parameter will be removed in version 1.3. Please
+               use :meth:`fig.suptitle()<matplotlib.figure.Figure.suptitle>`
+               instead.
+        %(show)s
         %(verbose)s
 
         Returns
@@ -306,6 +323,9 @@ class Covariance(dict):
         .. versionadded:: 0.21
         """
         from .viz.misc import _index_info_cov
+
+        vlim = _warn_deprecated_vmin_vmax(vlim, vmin, vmax)
+
         info, C, _, _ = _index_info_cov(info, self, exclude=())
         evoked = EvokedArray(np.diag(C)[:, np.newaxis], info)
         if noise_cov is not None:
@@ -321,8 +341,8 @@ class Covariance(dict):
         if scalings is None:
             scalings = {k: v * v for k, v in DEFAULTS['scalings'].items()}
         return evoked.plot_topomap(
-            times=[0], ch_type=ch_type, vmin=vmin, vmax=vmax, cmap=cmap,
-            sensors=sensors, colorbar=colorbar, scalings=scalings,
+            times=[0], ch_type=ch_type, vmin=vlim[0], vmax=vlim[1], cmap=cmap,
+            sensors=sensors, cnorm=cnorm, colorbar=colorbar, scalings=scalings,
             units=units, res=res, size=size, cbar_fmt=cbar_fmt,
             proj=proj, show=show, show_names=show_names, title=title,
             mask=mask, mask_params=mask_params, outlines=outlines,
@@ -569,7 +589,8 @@ def compute_raw_covariance(raw, tmin=0, tmax=None, tstep=0.2, reject=None,
         pick_mask = slice(None)
         picks = _picks_to_idx(raw.info, picks)
     epochs = Epochs(raw, events, 1, 0, tstep_m1, baseline=None,
-                    picks=picks, reject=reject, flat=flat, verbose=False,
+                    picks=picks, reject=reject, flat=flat,
+                    verbose=_verbose_safe_false(),
                     preload=False, proj=False,
                     reject_by_annotation=reject_by_annotation)
     if method is None:
@@ -1019,8 +1040,9 @@ def _compute_covariance_auto(data, method, info, method_params, cv,
     """Compute covariance auto mode."""
     # rescale to improve numerical stability
     orig_rank = rank
-    rank = compute_rank(RawArray(data.T, info, copy=None, verbose=False),
-                        rank, scalings, info)
+    rank = compute_rank(
+        RawArray(data.T, info, copy=None, verbose=_verbose_safe_false()),
+        rank, scalings, info)
     with _scaled_array(data.T, picks_list, scalings):
         C = np.dot(data.T, data)
         _, eigvec, mask = _smart_eigh(C, info, rank, proj_subspace=True,
@@ -1532,7 +1554,7 @@ def _smart_eigh(C, info, rank, scalings=None, projs=None,
         eig[picks], eigvec[np.ix_(picks, picks)], mask[picks] = e, ev, m
         # XXX : also handle ref for sEEG and ECoG
         if ch_type == 'eeg' and _needs_eeg_average_ref_proj(info) and not \
-                _has_eeg_average_ref_proj(projs):
+                _has_eeg_average_ref_proj(info, projs=projs):
             warn('No average EEG reference present in info["projs"], '
                  'covariance may be adversely affected. Consider recomputing '
                  'covariance using with an average eeg reference projector '
@@ -2086,5 +2108,5 @@ def _ensure_cov(cov, name='cov', *, verbose=None):
     _validate_type(cov, ('path-like', Covariance), name)
     logger.info('Noise covariance  : %s' % (cov,))
     if not isinstance(cov, Covariance):
-        cov = read_cov(cov, verbose=False)
+        cov = read_cov(cov, verbose=_verbose_safe_false())
     return cov

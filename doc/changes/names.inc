@@ -38,7 +38,7 @@
 
 .. _Anna Padee: https://github.com/apadee/
 
-.. _Annalisa Pascarella: http://www.iac.rm.cnr.it/~pasca/
+.. _Annalisa Pascarella: https://www.dima.unige.it/~pascarel/html/cv.html
 
 .. _Anne-Sophie Dubarry: https://github.com/annesodub
 
@@ -116,6 +116,8 @@
 
 .. _Dominik Welke: https://github.com/dominikwelke/
 
+.. _Dominik Wetzel: https://github.com/schmetzler
+
 .. _Dominique Makowski: https://dominiquemakowski.github.io/
 
 .. _Eberhard Eich: https://github.com/ebeich
@@ -171,6 +173,8 @@
 .. _Hongjiang Ye: https://github.com/rubyyhj
 
 .. _Hubert Banville: https://github.com/hubertjb
+
+.. _Hüseyin Orkun Elmas: https://github.com/HuseyinOrkun
 
 .. _Ilias Machairas: https://github.com/JungleHippo
 
@@ -321,6 +325,8 @@
 .. _Mingjian He: https://github.com/mh105
 
 .. _Mohammad Daneshzand: https://github.com/mdaneshzand
+
+.. _Moritz Gerster: https://github.com/moritz-gerster
 
 .. _Natalie Klein: https://github.com/natalieklein
 
@@ -488,7 +494,7 @@
 
 .. _Xiaokai Xia: https://github.com/dddd1007
 
-.. _Yaroslav Halchenko: http://www.onerussian.com/
+.. _Yaroslav Halchenko: http://haxbylab.dartmouth.edu/ppl/yarik.html
 
 .. _Yousra Bekhti: https://www.linkedin.com/pub/yousra-bekhti/56/886/421
 

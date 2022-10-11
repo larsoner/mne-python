@@ -181,7 +181,7 @@ numpydoc_xref_aliases = {
     'file-like': ':term:`file-like <python:file object>`',
     'iterator': ':term:`iterator <python:iterator>`',
     'path-like': ':term:`path-like`',
-    'array-like': ':term:`array-like`',
+    'array-like': ':term:`array_like <numpy:array_like>`',
     'Path': ':class:`python:pathlib.Path`',
     'bool': ':class:`python:bool`',
     # Matplotlib
@@ -237,6 +237,7 @@ numpydoc_xref_aliases = {
     'Transform': 'mne.transforms.Transform',
     'Coregistration': 'mne.coreg.Coregistration',
     'Figure3D': 'mne.viz.Figure3D',
+    'EOGRegression': 'mne.preprocessing.EOGRegression',
     'Spectrum': 'mne.time_frequency.Spectrum',
     'EpochsSpectrum': 'mne.time_frequency.EpochsSpectrum',
     # dipy
@@ -388,6 +389,7 @@ else:
             warnings.filterwarnings("ignore", category=DeprecationWarning)
             import pyvista
         pyvista.OFF_SCREEN = False
+        pyvista.BUILDING_GALLERY = True
         scrapers += (
             mne.gui._GUIScraper(),
             mne.viz._brain._BrainScraper(),
@@ -970,6 +972,18 @@ def reset_warnings(gallery_conf, fname):
     warnings.filterwarnings(
         'ignore', message=r'.*Setting theme=.*6 in qdarkstyle.*',
         category=RuntimeWarning)
+    # pandas, via seaborn (examples/time_frequency/time_frequency_erds.py)
+    warnings.filterwarnings(
+        'ignore', message=r'iteritems is deprecated.*Use \.items instead\.',
+        category=FutureWarning)
+    # pandas in 50_epochs_to_data_frame.py
+    warnings.filterwarnings(
+        'ignore', message=r'invalid value encountered in cast',
+        category=RuntimeWarning)
+    # xarray _SixMetaPathImporter (?)
+    warnings.filterwarnings(
+        'ignore', message=r'falling back to find_module',
+        category=ImportWarning)
 
     # In case we use np.set_printoptions in any tutorials, we only
     # want it to affect those:

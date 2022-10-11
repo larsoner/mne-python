@@ -523,6 +523,9 @@ def pick_info(info, sel=(), copy=True, verbose=None):
             c['data']['data'] = c['data']['data'][row_idx]
         with info._unlock():
             info['comps'] = comps
+    if info.get('custom_ref_applied', False) and not _electrode_types(info):
+        with info._unlock():
+            info['custom_ref_applied'] = FIFF.FIFFV_MNE_CUSTOM_REF_OFF
     info._check_consistency()
 
     return info
@@ -930,13 +933,21 @@ _FNIRS_CH_TYPES_SPLIT = ('hbo', 'hbr', 'fnirs_cw_amplitude',
 _DATA_CH_TYPES_ORDER_DEFAULT = (
     'mag', 'grad', 'eeg', 'csd', 'eog', 'ecg', 'resp', 'emg', 'ref_meg',
     'misc', 'stim', 'chpi', 'exci', 'ias', 'syst', 'seeg', 'bio', 'ecog',
-    'dbs') + _FNIRS_CH_TYPES_SPLIT + ('whitened',)
+    'dbs', 'temperature', 'gsr', 'gof', 'dipole',
+) + _FNIRS_CH_TYPES_SPLIT + ('whitened',)
 # Valid data types, ordered for consistency, used in viz/evoked.
 _VALID_CHANNEL_TYPES = (
     'eeg', 'grad', 'mag', 'seeg', 'eog', 'ecg', 'resp', 'emg', 'dipole', 'gof',
     'bio', 'ecog', 'dbs') + _FNIRS_CH_TYPES_SPLIT + ('misc', 'csd')
 _DATA_CH_TYPES_SPLIT = (
     'mag', 'grad', 'eeg', 'csd', 'seeg', 'ecog', 'dbs') + _FNIRS_CH_TYPES_SPLIT
+# Electrode types (e.g., can be average-referenced together or separately)
+_ELECTRODE_CH_TYPES = ('eeg', 'ecog', 'seeg', 'dbs')
+
+
+def _electrode_types(info, *, exclude='bads'):
+    return [ch_type for ch_type in _ELECTRODE_CH_TYPES
+            if len(pick_types(info, exclude=exclude, **{ch_type: True}))]
 
 
 def _pick_data_channels(info, exclude='bads', with_ref_meg=True,

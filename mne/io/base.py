@@ -47,7 +47,7 @@ from ..utils import (_check_fname, _check_pandas_installed, sizeof_fmt,
                      copy_function_doc_to_method_doc, _validate_type,
                      _check_preload, _get_argvalues, _check_option,
                      _build_data_frame, _convert_times, _scale_dataframe_data,
-                     _check_time_format, _arange_div, TimeMixin)
+                     _check_time_format, _arange_div, TimeMixin, repr_html)
 from ..defaults import _handle_default
 from ..viz import plot_raw, _RAW_CLIP_DEF
 from ..event import find_events, concatenate_events
@@ -216,7 +216,7 @@ class BaseRaw(ProjMixin, ContainsMixin, UpdateChannelsMixin, SetChannelsMixin,
             # Final check of orig_units, editing a unit if it is not a valid
             # unit
             orig_units = _check_orig_units(orig_units)
-        self._orig_units = orig_units
+        self._orig_units = orig_units or dict()  # always a dict
         self._projectors = list()
         self._projector = None
         self._dtype_ = dtype
@@ -1263,7 +1263,7 @@ class BaseRaw(ProjMixin, ContainsMixin, UpdateChannelsMixin, SetChannelsMixin,
                              % (tmin, tmax))
         if tmin < 0.0:
             raise ValueError('tmin (%s) must be >= 0' % (tmin,))
-        elif tmax > max_time:
+        elif tmax - int(not include_tmax) / self.info['sfreq'] > max_time:
             raise ValueError('tmax (%s) must be less than or equal to the max '
                              'time (%0.4f sec)' % (tmax, max_time))
 
@@ -1739,14 +1739,21 @@ class BaseRaw(ProjMixin, ContainsMixin, UpdateChannelsMixin, SetChannelsMixin,
                 size_str))
         return "<%s | %s>" % (self.__class__.__name__, s)
 
+    @repr_html
     def _repr_html_(self, caption=None):
         from ..html_templates import repr_templates_env
         basenames = [
             os.path.basename(f) for f in self._filenames if f is not None
         ]
-        m, s = divmod(self._last_time - self.first_time, 60)
-        h, m = divmod(m, 60)
-        duration = f'{int(h):02d}:{int(m):02d}:{int(s):02d}'
+
+        # https://stackoverflow.com/a/10981895
+        duration = timedelta(seconds=self.times[-1])
+        hours, remainder = divmod(duration.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        seconds += duration.microseconds / 1e6
+        seconds = np.ceil(seconds)  # always take full seconds
+
+        duration = f'{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}'
         raw_template = repr_templates_env.get_template('raw.html.jinja')
         return raw_template.render(
             info_repr=self.info._repr_html_(caption=caption),

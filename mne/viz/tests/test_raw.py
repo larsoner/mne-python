@@ -17,7 +17,9 @@ from mne import Annotations, create_info, pick_types
 from mne.annotations import _sync_onset
 from mne.datasets import testing
 from mne.io import RawArray
-from mne.utils import _dt_to_stamp, _record_warnings, get_config, set_config
+from mne.io.pick import _DATA_CH_TYPES_ORDER_DEFAULT, _PICK_TYPES_DATA_DICT
+from mne.utils import (_dt_to_stamp, _record_warnings, get_config, set_config,
+                       _assert_no_instances)
 from mne.viz import plot_raw, plot_sensors
 from mne.viz.utils import _fake_click, _fake_keypress
 
@@ -939,3 +941,35 @@ def test_clock_xticks(raw, dur, n_dec, browser_backend):
     assert tick_texts[0].startswith('19:01:53')
     if len(tick_texts[0].split('.')) > 1:
         assert len(tick_texts[0].split('.')[1]) == n_dec
+
+
+def test_plotting_order_consistency():
+    """Test that our internal variables have some consistency."""
+    pick_data_set = set(_PICK_TYPES_DATA_DICT)
+    pick_data_set.remove('meg')
+    pick_data_set.remove('fnirs')
+    missing = pick_data_set.difference(set(_DATA_CH_TYPES_ORDER_DEFAULT))
+    assert missing == set()
+
+
+def test_plotting_temperature_gsr(browser_backend):
+    """Test that we can plot temperature and GSR."""
+    data = np.random.RandomState(0).randn(2, 1000)
+    data[0] += 37  # deg C
+    # no idea what the scale should be for GSR
+    info = create_info(2, 1000., ['temperature', 'gsr'])
+    raw = RawArray(data, info)
+    fig = raw.plot()
+    tick_texts = fig._get_ticklabels('y')
+    assert len(tick_texts) == 2
+
+
+@pytest.mark.pgtest
+def test_plotting_memory_garbage_collection(raw, pg_backend):
+    """Test that memory can be garbage collected properly."""
+    pytest.importorskip('mne_qt_browser', minversion='0.4')
+    raw.plot().close()
+    import mne_qt_browser
+    from mne_qt_browser._pg_figure import MNEQtBrowser
+    assert len(mne_qt_browser._browser_instances) == 0
+    _assert_no_instances(MNEQtBrowser, 'after closing')

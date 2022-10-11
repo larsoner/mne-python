@@ -130,6 +130,7 @@ known_config_types = (
     'MNE_KIT2FIFF_STIM_CHANNEL_THRESHOLD',
     'MNE_LOGGING_LEVEL',
     'MNE_MEMMAP_MIN_SIZE',
+    'MNE_REPR_HTML',
     'MNE_SKIP_FTP_TESTS',
     'MNE_SKIP_NETWORK_TESTS',
     'MNE_SKIP_TESTING_DATASET_TESTS',
@@ -453,7 +454,10 @@ def _get_numpy_libs():
         from threadpoolctl import threadpool_info
     except Exception as exc:
         return bad_lib + f' (threadpoolctl module not found: {exc})'
-    pools = threadpool_info()
+    try:
+        pools = threadpool_info()
+    except Exception as exc:
+        return bad_lib + f' (threadpoolctl failed to get info: {exc})'
     rename = dict(
         openblas='OpenBLAS',
         mkl='MKL',

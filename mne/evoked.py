@@ -19,7 +19,7 @@ from .channels.layout import _merge_ch_data, _pair_grad_sensors
 from .defaults import (_INTERPOLATION_DEFAULT, _EXTRAPOLATE_DEFAULT,
                        _BORDER_DEFAULT)
 from .filter import detrend, FilterMixin, _check_fun
-from .utils import (check_fname, logger, verbose, warn, sizeof_fmt,
+from .utils import (check_fname, logger, verbose, warn, sizeof_fmt, repr_html,
                     SizeMixin, copy_function_doc_to_method_doc, _validate_type,
                     fill_doc, _check_option, _build_data_frame,
                     _check_pandas_installed, _check_pandas_index_arguments,
@@ -352,6 +352,7 @@ class Evoked(ProjMixin, ContainsMixin, UpdateChannelsMixin, SetChannelsMixin,
         s += ", ~%s" % (sizeof_fmt(self._size),)
         return "<Evoked | %s>" % s
 
+    @repr_html
     def _repr_html_(self):
         from .html_templates import repr_templates_env
         if self.baseline is None:
@@ -373,7 +374,7 @@ class Evoked(ProjMixin, ContainsMixin, UpdateChannelsMixin, SetChannelsMixin,
     def plot(self, picks=None, exclude='bads', unit=True, show=True, ylim=None,
              xlim='tight', proj=False, hline=None, units=None, scalings=None,
              titles=None, axes=None, gfp=False, window_title=None,
-             spatial_colors=False, zorder='unsorted', selectable=True,
+             spatial_colors='auto', zorder='unsorted', selectable=True,
              noise_cov=None, time_unit='s', sphere=None, *, highlight=None,
              verbose=None):
         return plot_evoked(
@@ -421,21 +422,20 @@ class Evoked(ProjMixin, ContainsMixin, UpdateChannelsMixin, SetChannelsMixin,
             exclude=exclude, show=show)
 
     @copy_function_doc_to_method_doc(plot_evoked_topomap)
-    def plot_topomap(self, times="auto", ch_type=None, vmin=None,
-                     vmax=None, cmap=None, sensors=True, colorbar=True,
-                     scalings=None, units=None, res=64,
-                     size=1, cbar_fmt="%3.1f",
-                     time_unit='s', time_format=None,
-                     proj=False, show=True, show_names=False, title=None,
-                     mask=None, mask_params=None, outlines='head',
-                     contours=6, image_interp=_INTERPOLATION_DEFAULT,
-                     average=None, axes=None,
-                     extrapolate=_EXTRAPOLATE_DEFAULT, sphere=None,
-                     border=_BORDER_DEFAULT, nrows=1, ncols='auto'):
+    def plot_topomap(
+            self, times="auto", *, average=None, ch_type=None, scalings=None,
+            proj=False, sensors=True, show_names=False, mask=None,
+            mask_params=None, contours=6, outlines='head', sphere=None,
+            image_interp=_INTERPOLATION_DEFAULT,
+            extrapolate=_EXTRAPOLATE_DEFAULT, border=_BORDER_DEFAULT, res=64,
+            size=1, cmap=None, vlim=(None, None), vmin=None, vmax=None,
+            cnorm=None, colorbar=True, cbar_fmt='%3.1f', units=None, axes=None,
+            time_unit='s', time_format=None, title=None, nrows=1, ncols='auto',
+            show=True):
         return plot_evoked_topomap(
-            self, times=times, ch_type=ch_type, vmin=vmin,
-            vmax=vmax, cmap=cmap, sensors=sensors, colorbar=colorbar,
-            scalings=scalings, units=units, res=res,
+            self, times=times, ch_type=ch_type, vlim=vlim, vmin=vmin,
+            vmax=vmax, cmap=cmap, cnorm=cnorm, sensors=sensors,
+            colorbar=colorbar, scalings=scalings, units=units, res=res,
             size=size, cbar_fmt=cbar_fmt, time_unit=time_unit,
             time_format=time_format, proj=proj, show=show,
             show_names=show_names, title=title, mask=mask,

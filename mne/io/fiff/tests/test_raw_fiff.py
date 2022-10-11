@@ -1049,7 +1049,8 @@ def test_crop():
     tmaxs /= sfreq
     tmins /= sfreq
 
-    # going in revere order so the last fname is the first file (need it later)
+    # going in reverse order so the last fname is the first file (need it
+    # later)
     raws = [None] * len(tmins)
     for ri, (tmin, tmax) in enumerate(zip(tmins, tmaxs)):
         raws[ri] = raw.copy().crop(tmin, tmax)
@@ -1073,6 +1074,19 @@ def test_crop():
     # degenerate
     with pytest.raises(ValueError, match='No samples.*when include_tmax=Fals'):
         raw.crop(0, 0, include_tmax=False)
+
+    # edge cases cropping to exact duration +/- 1 sample
+    data = np.zeros((1, 100))
+    info = create_info(1, 100)
+    raw = RawArray(data, info)
+    with pytest.raises(ValueError, match='tmax \\(1\\) must be less than or '):
+        raw.copy().crop(tmax=1, include_tmax=True)
+    raw1 = raw.copy().crop(tmax=1 - 1 / raw.info['sfreq'], include_tmax=True)
+    assert raw.n_times == raw1.n_times
+    raw2 = raw.copy().crop(tmax=1, include_tmax=False)
+    assert raw.n_times == raw2.n_times
+    raw3 = raw.copy().crop(tmax=1 - 1 / raw.info['sfreq'], include_tmax=False)
+    assert raw.n_times - 1 == raw3.n_times
 
 
 @testing.requires_testing_data
@@ -1336,11 +1350,12 @@ def test_add_channels():
     """Test raw splitting / re-appending channel types."""
     rng = np.random.RandomState(0)
     raw = read_raw_fif(test_fif_fname).crop(0, 1).load_data()
+    assert raw._orig_units == {}
     raw_nopre = read_raw_fif(test_fif_fname, preload=False)
     raw_eeg_meg = raw.copy().pick_types(meg=True, eeg=True)
-    raw_eeg = raw.copy().pick_types(meg=False, eeg=True)
-    raw_meg = raw.copy().pick_types(meg=True, eeg=False)
-    raw_stim = raw.copy().pick_types(meg=False, eeg=False, stim=True)
+    raw_eeg = raw.copy().pick_types(eeg=True)
+    raw_meg = raw.copy().pick_types(meg=True)
+    raw_stim = raw.copy().pick_types(stim=True)
     raw_new = raw_meg.copy().add_channels([raw_eeg, raw_stim])
     assert (
         all(ch in raw_new.ch_names
@@ -1386,7 +1401,7 @@ def test_add_channels():
 
     pytest.raises(RuntimeError, raw_meg.add_channels, [raw_nopre])
     pytest.raises(RuntimeError, raw_meg.add_channels, [raw_badsf])
-    pytest.raises(AssertionError, raw_meg.add_channels, [raw_eeg])
+    pytest.raises(ValueError, raw_meg.add_channels, [raw_eeg])
     pytest.raises(ValueError, raw_meg.add_channels, [raw_meg])
     pytest.raises(TypeError, raw_meg.add_channels, raw_badsf)
 
@@ -1609,13 +1624,20 @@ def test_drop_channels_mixin():
 
     # Test that dropping all channels a projector applies to will lead to the
     # removal of said projector.
-    raw = read_raw_fif(fif_fname)
+    raw = read_raw_fif(fif_fname).crop(0, 1)
     n_projs = len(raw.info['projs'])
     eeg_names = raw.info['projs'][-1]['data']['col_names']
     with pytest.raises(RuntimeError, match='loaded'):
         raw.copy().apply_proj().drop_channels(eeg_names)
     raw.load_data().drop_channels(eeg_names)  # EEG proj
     assert len(raw.info['projs']) == n_projs - 1
+
+    # Dropping EEG channels with custom ref removes info['custom_ref_applied']
+    raw = read_raw_fif(fif_fname).crop(0, 1).load_data()
+    raw.set_eeg_reference()
+    assert raw.info['custom_ref_applied']
+    raw.drop_channels(eeg_names)
+    assert not raw.info['custom_ref_applied']
 
 
 @testing.requires_testing_data

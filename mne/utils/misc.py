@@ -20,7 +20,6 @@ import traceback
 import numpy as np
 
 from ..utils import _check_option, _validate_type
-from ..fixes import _get_args
 from ._logging import logger, verbose, warn
 
 
@@ -133,22 +132,49 @@ def run_subprocess(command, return_code=False, verbose=None, *args, **kwargs):
         while True:
             do_break = p.poll() is not None
             # read all current lines without blocking
-            while True:
+            while True:  # process stdout
                 try:
                     out = out_q.get(timeout=0.01)
                 except Empty:
                     break
                 else:
+                    # Strip newline at end of the string, otherwise we'll end
+                    # up with two subsequent newlines (as the logger adds one)
+                    #
+                    # XXX Once we drop support for Python <3.9, uncomment the
+                    # following line and remove the if/else block below.
+                    #
+                    # out = out.decode('utf-8').removesuffix('\n')
                     out = out.decode('utf-8')
+                    if sys.version_info[:2] >= (3, 9):
+                        out = out.removesuffix('\n')
+                    else:
+                        if out.endswith('\n'):
+                            out = out[:-1]
+
                     logger.info(out)
                     all_out += out
-            while True:
+
+            while True:  # process stderr
                 try:
                     err = err_q.get(timeout=0.01)
                 except Empty:
                     break
                 else:
+                    # Strip newline at end of the string, otherwise we'll end
+                    # up with two subsequent newlines (as the logger adds one)
+                    #
+                    # XXX Once we drop support for Python <3.9, uncomment the
+                    # following line and remove the if/else block below.
+                    #
+                    # err = err.decode('utf-8').removesuffix('\n')
                     err = err.decode('utf-8')
+                    if sys.version_info[:2] >= (3, 9):
+                        err = err.removesuffix('\n')
+                    else:
+                        if err.endswith('\n'):
+                            err = err[:-1]
+
                     # Leave this as logger.warning rather than warn(...) to
                     # mirror the logger.info above for stdout. This function
                     # is basically just a version of subprocess.call, and
@@ -157,6 +183,7 @@ def run_subprocess(command, return_code=False, verbose=None, *args, **kwargs):
                     # emit a warning if it wants).
                     logger.warning(err)
                     all_err += err
+
             if do_break:
                 break
     output = (all_out, all_err)
@@ -166,7 +193,7 @@ def run_subprocess(command, return_code=False, verbose=None, *args, **kwargs):
     elif p.returncode:
         print(output)
         err_fun = subprocess.CalledProcessError.__init__
-        if 'output' in _get_args(err_fun):
+        if 'output' in inspect.signature(err_fun).parameters:
             raise subprocess.CalledProcessError(p.returncode, command, output)
         else:
             raise subprocess.CalledProcessError(p.returncode, command)
@@ -356,7 +383,7 @@ def _assert_no_instances(cls, when=''):
                         r is not globals() and \
                         r is not locals() and \
                         not inspect.isframe(r):
-                    if isinstance(r, (list, dict)):
+                    if isinstance(r, (list, dict, tuple)):
                         rep = f'len={len(r)}'
                         r_ = gc.get_referrers(r)
                         types = (_fullname(x) for x in r_)
@@ -406,3 +433,32 @@ def _resource_path(submodule, filename):
     except ImportError:
         from pkg_resources import resource_filename
         return resource_filename(submodule, filename)
+
+
+def repr_html(f):
+    """Decorate _repr_html_ methods.
+
+    If a _repr_html_ method is decorated with this decorator, the repr in a
+    notebook will show HTML or plain text depending on the config value
+    MNE_REPR_HTML (by default "true", which will render HTML).
+
+    Parameters
+    ----------
+    f : function
+        The function to decorate.
+
+    Returns
+    -------
+    wrapper : function
+        The decorated function.
+    """
+    from ..utils import get_config
+
+    def wrapper(*args, **kwargs):
+        if get_config("MNE_REPR_HTML", "true").lower() == "false":
+            import html
+            r = "<pre>" + html.escape(repr(args[0])) + "</pre>"
+            return r.replace("\n", "<br/>")
+        else:
+            return f(*args, **kwargs)
+    return wrapper
