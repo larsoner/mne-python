@@ -960,9 +960,12 @@ class CoregistrationUI(HasTraits):
             self.coreg._get_point_distance_str()
         dists = self.coreg.compute_dig_mri_distances() * 1e3
         if self._hsp_weight > 0:
-            value += "\nHSP <-> MRI (mean/min/max): "\
-                f"{np.mean(dists):.2f} "\
-                f"/ {np.min(dists):.2f} / {np.max(dists):.2f} mm"
+            if len(dists) == 0:
+                value += "\nNo head shape points found."
+            else:
+                value += "\nHSP <-> MRI (mean/min/max): "\
+                    f"{np.mean(dists):.2f} "\
+                    f"/ {np.min(dists):.2f} / {np.max(dists):.2f} mm"
         self._forward_widget_command("fit_label", "set_value", value)
 
     def _update_parameters(self):

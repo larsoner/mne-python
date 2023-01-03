@@ -1392,7 +1392,8 @@ class Coregistration(object):
                                       high_res=False)
         if high_res_path is None and low_res_path is None:
             raise RuntimeError("No standard head model was "
-                               f"found for subject {self._subject}")
+                               f"found for subject {self._subject} in "
+                               f"{self._subjects_dir}")
         if high_res_path is not None:
             self._bem_high_res = _read_surface(
                 high_res_path, on_defects=self._on_defects
@@ -1795,9 +1796,9 @@ class Coregistration(object):
         return self
 
     def _setup_icp(self, n_scale_params):
-        head_pts = list()
-        mri_pts = list()
-        weights = list()
+        head_pts = [np.zeros((0, 3))]
+        mri_pts = [np.zeros((0, 3))]
+        weights = [np.zeros(0)]
         if self._has_dig_data and self._hsp_weight > 0:  # should be true
             head_pts.append(self._filtered_extra_points)
             mri_pts.append(self._processed_high_res_mri_points[
