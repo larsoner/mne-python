@@ -58,12 +58,13 @@ def run():
     parser.add_option("-3", "--flash30", "--noflash30", dest="flash30",
                       action="callback", callback=_vararg_callback,
                       help=("The 30-degree flip angle data. If no argument do "
-                            "not use flash30. If arguments are given, them as "
-                            "file names."))
+                            "not use flash30. If arguments are given, give "
+                            "them as file names."))
     parser.add_option("-5", "--flash5", dest="flash5",
                       action="callback", callback=_vararg_callback,
                       help=("Path to the multiecho flash 5 images. "
-                            "Can be one file or one per echo."),)
+                            "Can be one file or one per echo "
+                            "(with filenames separated by spaces)."),)
     parser.add_option("-r", "--registered", dest="registered",
                       action="store_true", default=False,
                       help=("Set if the Flash MRI images have already "

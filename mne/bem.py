@@ -1878,11 +1878,16 @@ def _write_echos(mri_dir, flash_echos, angle):
             flash_echo_imgs.append(this_echo_img)
         flash_echos = flash_echo_imgs
         del flash_echo_imgs
+    logger.info(
+        f'Writing {len(flash_echos)} flash {angle} echo{_pl(flash_echos)} '
+        'to mgz')
     for idx, flash_echo in enumerate(flash_echos, 1):
         if _path_like(flash_echo):
             flash_echo = nib.load(flash_echo)
-        nib.save(flash_echo,
-                 op.join(mri_dir, 'flash', f'mef{angle}_{idx:03d}.mgz'))
+        out_fname = op.join(mri_dir, 'flash', f'mef{angle}_{idx:03d}.mgz')
+        logger.info(f'    {out_fname} ...')
+        nib.save(flash_echo, out_fname)
+    logger.info('[done]')
 
 
 @verbose
