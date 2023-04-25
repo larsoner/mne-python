@@ -207,7 +207,8 @@ _unit2human = {FIFF.FIFF_UNIT_V: 'V',
                FIFF.FIFF_UNIT_MOL: 'M',
                FIFF.FIFF_UNIT_NONE: 'NA',
                FIFF.FIFF_UNIT_CEL: 'C',
-               FIFF.FIFF_UNIT_S: 'S'}
+               FIFF.FIFF_UNIT_S: 'S',
+               FIFF.FIFF_UNIT_PX: 'px'}
 
 
 def _check_set(ch, projs, ch_type):
@@ -335,7 +336,8 @@ class SetChannelsMixin(MontageMixin):
 
             ecg, eeg, emg, eog, exci, ias, misc, resp, seeg, dbs, stim, syst,
             ecog, hbo, hbr, fnirs_cw_amplitude, fnirs_fd_ac_amplitude,
-            fnirs_fd_phase, fnirs_od, temperature, gsr
+            fnirs_fd_phase, fnirs_od, eyetrack_pos, eyetrack_pupil,
+            temperature, gsr
 
         .. versionadded:: 0.9.0
         """
@@ -383,6 +385,10 @@ class SetChannelsMixin(MontageMixin):
                 coil_type = FIFF.FIFFV_COIL_FNIRS_FD_PHASE
             elif ch_type == 'fnirs_od':
                 coil_type = FIFF.FIFFV_COIL_FNIRS_OD
+            elif ch_type == 'eyetrack_pos':
+                coil_type = FIFF.FIFFV_COIL_EYETRACK_POS
+            elif ch_type == 'eyetrack_pupil':
+                coil_type = FIFF.FIFFV_COIL_EYETRACK_PUPIL
             else:
                 coil_type = FIFF.FIFFV_COIL_NONE
             self.info['chs'][c_ind]['coil_type'] = coil_type
@@ -590,7 +596,7 @@ class SetChannelsMixin(MontageMixin):
         return self
 
 
-class UpdateChannelsMixin(object):
+class UpdateChannelsMixin:
     """Mixin class for Raw, Evoked, Epochs, Spectrum, AverageTFR."""
 
     @verbose
@@ -599,7 +605,7 @@ class UpdateChannelsMixin(object):
                    resp=False, chpi=False, exci=False, ias=False, syst=False,
                    seeg=False, dipole=False, gof=False, bio=False,
                    ecog=False, fnirs=False, csd=False, dbs=False,
-                   temperature=False, gsr=False,
+                   temperature=False, gsr=False, eyetrack=False,
                    include=(), exclude='bads', selection=None, verbose=None):
         """Pick some channels by type and names.
 
@@ -625,9 +631,9 @@ class UpdateChannelsMixin(object):
             self.info, meg=meg, eeg=eeg, stim=stim, eog=eog, ecg=ecg, emg=emg,
             ref_meg=ref_meg, misc=misc, resp=resp, chpi=chpi, exci=exci,
             ias=ias, syst=syst, seeg=seeg, dipole=dipole, gof=gof, bio=bio,
-            ecog=ecog, fnirs=fnirs, csd=csd, dbs=dbs, include=include,
-            exclude=exclude, selection=selection, temperature=temperature,
-            gsr=gsr)
+            ecog=ecog, fnirs=fnirs, csd=csd, dbs=dbs, temperature=temperature,
+            gsr=gsr, eyetrack=eyetrack, include=include, exclude=exclude,
+            selection=selection)
 
         self._pick_drop_channels(idx)
 
@@ -984,7 +990,7 @@ class UpdateChannelsMixin(object):
         return add_reference_channels(self, ref_channels, copy=False)
 
 
-class InterpolationMixin(object):
+class InterpolationMixin:
     """Mixin class for Raw, Evoked, Epochs."""
 
     @verbose
@@ -1009,9 +1015,9 @@ class InterpolationMixin(object):
             origin fit.
 
             .. versionadded:: 0.17
-        method : dict
+        method : dict | None
             Method to use for each channel type.
-            Currently only the key "eeg" has multiple options:
+            Currently only the key ``"eeg"`` has multiple options:
 
             - ``"spline"`` (default)
                 Use spherical spline interpolation.
@@ -1019,8 +1025,9 @@ class InterpolationMixin(object):
                 Use minimum-norm projection to a sphere and back.
                 This is the method used for MEG channels.
 
-            The value for "meg" is "MNE", and the value for
-            "fnirs" is "nearest". The default (None) is thus an alias for::
+            The value for ``"meg"`` is ``"MNE"``, and the value for
+            ``"fnirs"`` is ``"nearest"``. The default (None) is thus an alias
+            for::
 
                 method=dict(meg="MNE", eeg="spline", fnirs="nearest")
 
@@ -1440,7 +1447,7 @@ def read_ch_adjacency(fname, picks=None):
 
     Parameters
     ----------
-    fname : str
+    fname : path-like | str
         The path to the file to load, or the name of a channel adjacency
         matrix that ships with MNE-Python.
 
@@ -1477,10 +1484,12 @@ def read_ch_adjacency(fname, picks=None):
     """
     from scipy.io import loadmat
     if op.isabs(fname):
-        fname = _check_fname(
-            fname=fname,
-            overwrite='read',
-            must_exist=True
+        fname = str(
+            _check_fname(
+                fname=fname,
+                overwrite="read",
+                must_exist=True,
+            )
         )
     else:  # built-in FieldTrip neighbors
         ch_adj_name = fname
@@ -1499,10 +1508,12 @@ def read_ch_adjacency(fname, picks=None):
                   if a.name == ch_adj_name][0]
         fname = ch_adj.fname
         templates_dir = Path(__file__).resolve().parent / 'data' / 'neighbors'
-        fname = _check_fname(  # only needed to convert to a string
-            fname=templates_dir / fname,
-            overwrite='read',
-            must_exist=True
+        fname = str(
+            _check_fname(  # only needed to convert to a string
+                fname=templates_dir / fname,
+                overwrite="read",
+                must_exist=True,
+            )
         )
 
     nb = loadmat(fname)['neighbours']
@@ -1830,31 +1841,39 @@ def _get_ch_info(info):
 
 
 @fill_doc
-def make_1020_channel_selections(info, midline="z"):
-    """Return dict mapping from ROI names to lists of picks for 10/20 setups.
+def make_1020_channel_selections(info, midline="z", *, return_ch_names=False):
+    """Map hemisphere names to corresponding EEG channel names or indices.
 
-    This passes through all channel names, and uses a simple heuristic to
-    separate channel names into three Region of Interest-based selections:
-    Left, Midline and Right. The heuristic is that channels ending on any of
-    the characters in ``midline`` are filed under that heading, otherwise those
-    ending in odd numbers under "Left", those in even numbers under "Right".
-    Other channels are ignored. This is appropriate for 10/20 files, but not
-    for other channel naming conventions.
-    If an info object is provided, lists are sorted from posterior to anterior.
+    This function uses a simple heuristic to separate channel names into three
+    Region of Interest-based selections: ``Left``, ``Midline`` and ``Right``.
+
+    The heuristic is that any of the channel names ending
+    with odd numbers are filed under ``Left``; those ending with even numbers
+    are filed under ``Right``; and those ending with the character(s) specified
+    in ``midline`` are filed under ``Midline``. Other channels are ignored.
+
+    This is appropriate for 10/20, 10/10, 10/05, …, sensor arrangements, but
+    not for other naming conventions.
 
     Parameters
     ----------
-    %(info_not_none)s If possible, the channel lists will be sorted
-        posterior-to-anterior; otherwise they default to the order specified in
-        ``info["ch_names"]``.
+    %(info_not_none)s If channel locations are present, the channel lists will
+        be sorted from posterior to anterior; otherwise, the order specified in
+        ``info["ch_names"]`` will be kept.
     midline : str
         Names ending in any of these characters are stored under the
-        ``Midline`` key. Defaults to 'z'. Note that capitalization is ignored.
+        ``Midline`` key. Defaults to ``'z'``. Capitalization is ignored.
+    return_ch_names : bool
+        Whether to return channel names instead of channel indices.
+
+        .. versionadded:: 1.4.0
 
     Returns
     -------
     selections : dict
-        A dictionary mapping from ROI names to lists of picks (integers).
+        A dictionary mapping from region of interest name to a list of channel
+        indices (if ``return_ch_names=False``) or to a list of channel names
+        (if ``return_ch_names=True``).
     """
     _validate_type(info, "info")
 
@@ -1883,6 +1902,11 @@ def make_1020_channel_selections(info, midline="z"):
         # (y-coordinate of the position info in the layout)
         selections = {selection: np.array(picks)[pos[picks, 1].argsort()]
                       for selection, picks in selections.items()}
+
+    # convert channel indices to names if requested
+    if return_ch_names:
+        for selection, ch_indices in selections.items():
+            selections[selection] = [info.ch_names[idx] for idx in ch_indices]
 
     return selections
 
@@ -2118,7 +2142,7 @@ def read_vectorview_selection(name, fname=None, info=None, verbose=None):
         ``'Right-frontal'``. Selections can also be matched and combined by
         spcecifying common substrings. For example, ``name='temporal`` will
         produce a combination of ``'Left-temporal'`` and ``'Right-temporal'``.
-    fname : str
+    fname : path-like
         Filename of the selection file (if ``None``, built-in selections are
         used).
     %(info)s Used to determine which channel naming convention to use, e.g.
@@ -2150,7 +2174,7 @@ def read_vectorview_selection(name, fname=None, info=None, verbose=None):
     if fname is None:
         fname = op.join(op.dirname(__file__), '..', 'data', 'mne_analyze.sel')
 
-    fname = _check_fname(fname, must_exist=True, overwrite='read')
+    fname = str(_check_fname(fname, must_exist=True, overwrite="read"))
 
     # use this to make sure we find at least one match for each name
     name_found = {n: False for n in name}

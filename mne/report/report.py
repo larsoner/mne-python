@@ -40,7 +40,8 @@ from ..utils import (logger, verbose, get_subjects_dir, warn, _ensure_int,
                      fill_doc, _check_option, _validate_type, _safe_input,
                      _path_like, use_log_level, _check_fname, _pl,
                      _check_ch_locs, _import_h5io_funcs, _verbose_safe_false,
-                     check_version)
+                     check_version, _import_nibabel)
+from ..utils.spectrum import _split_psd_kwargs
 from ..viz import (plot_events, plot_alignment, plot_cov, plot_projs_topomap,
                    plot_compare_evokeds, set_3d_view, get_3d_backend,
                    Figure3D, use_browser_backend)
@@ -429,13 +430,8 @@ def _get_bem_contour_figs_as_arrays(
     list of array
         A list of NumPy arrays that represent the generated Matplotlib figures.
     """
-    # Matplotlib <3.2 doesn't work nicely with process-based parallelization
-    kwargs = dict()
-    if not check_version('matplotilb', '3.2'):
-        kwargs['prefer'] = 'threads'
-
     parallel, p_fun, n_jobs = parallel_func(
-        _plot_mri_contours, n_jobs, max_jobs=len(sl), **kwargs)
+        _plot_mri_contours, n_jobs, max_jobs=len(sl), prefer='threads')
     outs = parallel(
         p_fun(
             slices=s, mri_fname=mri_fname, surfaces=surfaces,
@@ -464,7 +460,7 @@ def _iterate_trans_views(function, alpha, **kwargs):
             return _itv(
                 function, fig, surfaces={'head-dense': alpha}, **kwargs
             )
-        except IOError:
+        except OSError:
             return _itv(function, fig, surfaces={'head': alpha}, **kwargs)
     finally:
         backend._close_3d_figure(fig)
@@ -579,7 +575,7 @@ def open_report(fname, **params):
 
     Parameters
     ----------
-    fname : str
+    fname : path-like
         The file containing the report, stored in the HDF5 format. If the file
         does not exist yet, a new report is created that will be saved to the
         specified file.
@@ -594,7 +590,7 @@ def open_report(fname, **params):
     report : instance of Report
         The report.
     """
-    fname = _check_fname(fname=fname, overwrite='read', must_exist=False)
+    fname = str(_check_fname(fname=fname, overwrite="read", must_exist=False))
     if op.exists(fname):
         # Check **params with the loaded report
         read_hdf5, _ = _import_h5io_funcs()
@@ -687,9 +683,11 @@ class Report:
     raw_psd : bool | dict
         If True, include PSD plots for raw files. Can be False (default) to
         omit, True to plot, or a dict to pass as ``kwargs`` to
-        :meth:`mne.io.Raw.plot_psd`.
+        :meth:`mne.time_frequency.Spectrum.plot`.
 
         .. versionadded:: 0.17
+        .. versionchanged:: 1.4
+           kwargs are sent to ``spectrum.plot`` instead of ``raw.plot_psd``.
     projs : bool
         Whether to include topographic plots of SSP projectors, if present in
         the data. Defaults to ``False``.
@@ -717,9 +715,11 @@ class Report:
     raw_psd : bool | dict
         If True, include PSD plots for raw files. Can be False (default) to
         omit, True to plot, or a dict to pass as ``kwargs`` to
-        :meth:`mne.io.Raw.plot_psd`.
+        :meth:`mne.time_frequency.Spectrum.plot`.
 
         .. versionadded:: 0.17
+        .. versionchanged:: 1.4
+           kwargs are sent to ``spectrum.plot`` instead of ``raw.plot_psd``.
     projs : bool
         Whether to include topographic plots of SSP projectors, if present in
         the data. Defaults to ``False``.
@@ -754,6 +754,8 @@ class Report:
         self.baseline = baseline
         if subjects_dir is not None:
             subjects_dir = get_subjects_dir(subjects_dir)
+            if subjects_dir is not None:
+                subjects_dir = str(subjects_dir)
         self.subjects_dir = subjects_dir
         self.subject = subject
         self.title = title
@@ -888,7 +890,7 @@ class Report:
 
         # We loop over all content elements and implement special treatment
         # for those that are part of a section: Those sections don't actually
-        # exist in `self._content` – we're creating them on-the-fly here!
+        # exist in `self._content` – we're creating them on-the-fly here!
         for idx, content_element in enumerate(content_elements):
             if content_element.section:
                 if content_element.section in titles:
@@ -2431,9 +2433,14 @@ class Report:
         # iterate through the possible patterns
         fnames = list()
         for p in pattern:
-            data_path = _check_fname(
-                fname=self.data_path, overwrite='read', must_exist=True,
-                name='Directory or folder', need_dir=True
+            data_path = str(
+                _check_fname(
+                    fname=self.data_path,
+                    overwrite="read",
+                    must_exist=True,
+                    name="Directory or folder",
+                    need_dir=True,
+                )
             )
             fnames.extend(sorted(_recursive_search(data_path, p)))
 
@@ -2592,7 +2599,7 @@ class Report:
                      f'instead')
             fname = op.join(self.data_path, 'report.html')
 
-        fname = _check_fname(fname, overwrite=overwrite, name=fname)
+        fname = str(_check_fname(fname, overwrite=overwrite, name=fname))
         fname = op.realpath(fname)  # resolve symlinks
 
         if sort_content:
@@ -2688,8 +2695,7 @@ class Report:
                              image_format, orientation, decim=2, n_jobs=None,
                              width=512, tags):
         """Render one axis of bem contours (only PNG)."""
-        import nibabel as nib
-
+        nib = _import_nibabel('render BEM contours')
         nim = nib.load(mri_fname)
         data = _reorient_image(nim)[0]
         axis = _mri_orientation(orientation)[0]
@@ -2830,7 +2836,11 @@ class Report:
             else:
                 fmax = np.inf
 
-            fig = raw.plot_psd(fmax=fmax, show=False, **add_psd)
+            # shim: convert legacy .plot_psd(...) → .compute_psd(...).plot(...)
+            init_kwargs, plot_kwargs = _split_psd_kwargs(kwargs=add_psd)
+            init_kwargs.setdefault('fmax', fmax)
+            plot_kwargs.setdefault('show', False)
+            fig = raw.compute_psd(**init_kwargs).plot(**plot_kwargs)
             tight_layout(fig=fig)
             _constrain_fig_resolution(
                 fig, max_width=MAX_IMG_WIDTH, max_res=MAX_IMG_RES
@@ -3321,8 +3331,8 @@ class Report:
             if n_epochs_required > len(epochs):
                 raise ValueError(
                     f'You requested to calculate PSD on a duration of '
-                    f'{psd:.3f} sec, but all your epochs '
-                    f'are only {signal_duration:.1f} sec long'
+                    f'{psd:.3f} s, but all your epochs '
+                    f'are only {signal_duration:.1f} s long'
                 )
             epochs_idx = np.round(
                 np.linspace(
@@ -3338,7 +3348,7 @@ class Report:
                     len(epochs_idx_unique) * epoch_duration, 1
                 )
                 warn(f'Using {len(epochs_idx_unique)} epochs, only '
-                     f'covering {duration:.1f} sec of data')
+                     f'covering {duration:.1f} s of data')
                 del duration
 
             epochs_for_psd = epochs[epochs_idx_unique]
@@ -3351,14 +3361,14 @@ class Report:
             if fmax > 0.5 * epochs.info['sfreq']:
                 fmax = np.inf
 
-        fig = epochs_for_psd.plot_psd(fmax=fmax, show=False)
+        fig = epochs_for_psd.compute_psd(fmax=fmax).plot(show=False)
         _constrain_fig_resolution(
             fig, max_width=MAX_IMG_WIDTH, max_res=MAX_IMG_RES
         )
         duration = round(epoch_duration * len(epochs_for_psd), 1)
         caption = (
             f'PSD calculated from {len(epochs_for_psd)} epochs '
-            f'({duration:.1f} sec).'
+            f'({duration:.1f} s).'
         )
         self._add_figure(
             fig=fig,
@@ -3777,7 +3787,7 @@ class Report:
         """Render mri+bem (only PNG)."""
         if subjects_dir is None:
             subjects_dir = self.subjects_dir
-        subjects_dir = get_subjects_dir(subjects_dir, raise_error=True)
+        subjects_dir = str(get_subjects_dir(subjects_dir, raise_error=True))
 
         # Get the MRI filename
         mri_fname = op.join(subjects_dir, subject, 'mri', 'T1.mgz')
@@ -3867,7 +3877,7 @@ _SCRAPER_TEXT = '''
 _FA_FILE_CODE = '<svg class="sg_report" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><path fill="#dec" d="M149.9 349.1l-.2-.2-32.8-28.9 32.8-28.9c3.6-3.2 4-8.8.8-12.4l-.2-.2-17.4-18.6c-3.4-3.6-9-3.7-12.4-.4l-57.7 54.1c-3.7 3.5-3.7 9.4 0 12.8l57.7 54.1c1.6 1.5 3.8 2.4 6 2.4 2.4 0 4.8-1 6.4-2.8l17.4-18.6c3.3-3.5 3.1-9.1-.4-12.4zm220-251.2L286 14C277 5 264.8-.1 252.1-.1H48C21.5 0 0 21.5 0 48v416c0 26.5 21.5 48 48 48h288c26.5 0 48-21.5 48-48V131.9c0-12.7-5.1-25-14.1-34zM256 51.9l76.1 76.1H256zM336 464H48V48h160v104c0 13.3 10.7 24 24 24h104zM209.6 214c-4.7-1.4-9.5 1.3-10.9 6L144 408.1c-1.4 4.7 1.3 9.6 6 10.9l24.4 7.1c4.7 1.4 9.6-1.4 10.9-6L240 231.9c1.4-4.7-1.3-9.6-6-10.9zm24.5 76.9l.2.2 32.8 28.9-32.8 28.9c-3.6 3.2-4 8.8-.8 12.4l.2.2 17.4 18.6c3.3 3.5 8.9 3.7 12.4.4l57.7-54.1c3.7-3.5 3.7-9.4 0-12.8l-57.7-54.1c-3.5-3.3-9.1-3.2-12.4.4l-17.4 18.6c-3.3 3.5-3.1 9.1.4 12.4z" class=""></path></svg>'  # noqa: E501
 
 
-class _ReportScraper(object):
+class _ReportScraper:
     """Scrape Report outputs.
 
     Only works properly if conf.py is configured properly and the file

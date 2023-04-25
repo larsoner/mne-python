@@ -97,7 +97,7 @@ def _read_curry_lines(fname, regex_list):
 
     Parameters
     ----------
-    fname : str
+    fname : path-like
         Path to a curry file.
     regex_list : list of str
         A list of strings or regular expressions to search within the file.
@@ -420,7 +420,7 @@ def _read_events_curry(fname):
 
     Parameters
     ----------
-    fname : str
+    fname : path-like
         Path to a curry event file with extensions .cef, .ceo,
         .cdt.cef, or .cdt.ceo
 
@@ -477,9 +477,9 @@ def read_raw_curry(fname, preload=False, verbose=None):
 
     Parameters
     ----------
-    fname : str
-        Path to a curry file with extensions .dat, .dap, .rs3, .cdt, .cdt.dpa,
-        .cdt.cef or .cef.
+    fname : path-like
+        Path to a curry file with extensions ``.dat``, ``.dap``, ``.rs3``,
+        ``.cdt``, ``.cdt.dpa``, ``.cdt.cef`` or ``.cef``.
     %(preload)s
     %(verbose)s
 
@@ -487,6 +487,11 @@ def read_raw_curry(fname, preload=False, verbose=None):
     -------
     raw : instance of RawCurry
         A Raw object containing Curry data.
+        See :class:`mne.io.Raw` for documentation of attributes and methods.
+
+    See Also
+    --------
+    mne.io.Raw : Documentation of attributes and methods of RawCurry.
     """
     return RawCurry(fname, preload, verbose)
 
@@ -496,15 +501,15 @@ class RawCurry(BaseRaw):
 
     Parameters
     ----------
-    fname : str
-        Path to a curry file with extensions .dat, .dap, .rs3, .cdt, .cdt.dpa,
-        .cdt.cef or .cef.
+    fname : path-like
+        Path to a curry file with extensions ``.dat``, ``.dap``, ``.rs3``,
+        ``.cdt``, ``.cdt.dpa``, ``.cdt.cef`` or ``.cef``.
     %(preload)s
     %(verbose)s
 
     See Also
     --------
-    mne.io.Raw : Documentation of attribute and methods.
+    mne.io.Raw : Documentation of attributes and methods.
 
     """
 

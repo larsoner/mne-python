@@ -87,7 +87,7 @@ def _ndarray_ch_names(ch_names):
 
 
 @fill_doc
-class Annotations(object):
+class Annotations:
     """Annotation object for annotating segments of raw data.
 
     .. note::
@@ -312,16 +312,20 @@ class Annotations(object):
 
     def __iter__(self):
         """Iterate over the annotations."""
+        # Figure this out once ahead of time for consistency and speed (for
+        # thousands of annotations)
+        with_ch_names = self._any_ch_names()
         for idx in range(len(self.onset)):
-            yield self.__getitem__(idx)
+            yield self.__getitem__(idx, with_ch_names=with_ch_names)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key, *, with_ch_names=None):
         """Propagate indexing and slicing to the underlying numpy structure."""
         if isinstance(key, int_like):
             out_keys = ('onset', 'duration', 'description', 'orig_time')
             out_vals = (self.onset[key], self.duration[key],
                         self.description[key], self.orig_time)
-            if self._any_ch_names():
+            if with_ch_names or (with_ch_names is None and
+                                 self._any_ch_names()):
                 out_keys += ('ch_names',)
                 out_vals += (self.ch_names[key],)
             return OrderedDict(zip(out_keys, out_vals))
@@ -458,7 +462,7 @@ class Annotations(object):
 
         Parameters
         ----------
-        fname : str
+        fname : path-like
             The filename to use.
         %(overwrite)s
 
@@ -477,9 +481,9 @@ class Annotations(object):
                                            '_annot.fif', '_annot.fif.gz',
                                            '.txt', '.csv'))
         fname = _check_fname(fname, overwrite=overwrite)
-        if fname.endswith(".txt"):
+        if fname.suffix == ".txt":
             _write_annotations_txt(fname, self)
-        elif fname.endswith(".csv"):
+        elif fname.suffix == ".csv":
             _write_annotations_csv(fname, self)
         else:
             with start_file(fname) as fid:
@@ -1038,14 +1042,15 @@ def _write_annotations_txt(fname, annot):
 def read_annotations(fname, sfreq='auto', uint16_codec=None):
     r"""Read annotations from a file.
 
-    This function reads a .fif, .fif.gz, .vmrk, .amrk, .edf, .txt, .csv, .cnt,
-     .cef, or .set file and makes an :class:`mne.Annotations` object.
+    This function reads a ``.fif``, ``.fif.gz``, ``.vmrk``, ``.amrk``,
+    ``.edf``, ``.txt``, ``.csv``, ``.cnt``, ``.cef``, or ``.set`` file and
+    makes an :class:`mne.Annotations` object.
 
     Parameters
     ----------
-    fname : str
+    fname : path-like
         The filename.
-    sfreq : float | 'auto'
+    sfreq : float | ``'auto'``
         The sampling frequency in the file. This parameter is necessary for
         \*.vmrk, \*.amrk, and \*.cef files as Annotations are expressed in
         seconds and \*.vmrk/\*.amrk/\*.cef files are in samples. For any other
@@ -1060,8 +1065,8 @@ def read_annotations(fname, sfreq='auto', uint16_codec=None):
         If your \*.set file contains non-ascii characters, sometimes reading
         it may fail and give rise to error message stating that "buffer is
         too small". ``uint16_codec`` allows to specify what codec (for example:
-        'latin1' or 'utf-8') should be used when reading character arrays and
-        can therefore help you solve this problem.
+        ``'latin1'`` or ``'utf-8'``) should be used when reading character
+        arrays and can therefore help you solve this problem.
 
     Returns
     -------
@@ -1070,9 +1075,9 @@ def read_annotations(fname, sfreq='auto', uint16_codec=None):
 
     Notes
     -----
-    The annotations stored in a .csv require the onset columns to be
+    The annotations stored in a ``.csv`` require the onset columns to be
     timestamps. If you have onsets as floats (in seconds), you should use the
-    .txt extension.
+    ``.txt`` extension.
     """
     from .io.brainvision.brainvision import _read_annotations_brainvision
     from .io.eeglab.eeglab import _read_annotations_eeglab
@@ -1080,11 +1085,16 @@ def read_annotations(fname, sfreq='auto', uint16_codec=None):
     from .io.cnt.cnt import _read_annotations_cnt
     from .io.curry.curry import _read_annotations_curry
     from .io.ctf.markers import _read_annotations_ctf
-    _validate_type(fname, 'path-like', 'fname')
-    fname = _check_fname(
-        fname, overwrite='read', must_exist=True,
-        need_dir=str(fname).endswith('.ds'),  # for CTF
-        name='fname')
+
+    fname = str(
+        _check_fname(
+            fname,
+            overwrite="read",
+            must_exist=True,
+            need_dir=str(fname).endswith(".ds"),  # for CTF
+            name="fname",
+        )
+    )
     name = op.basename(fname)
     if name.endswith(('fif', 'fif.gz')):
         # Read FiF files
@@ -1128,10 +1138,10 @@ def read_annotations(fname, sfreq='auto', uint16_codec=None):
     elif name.startswith('events_') and fname.endswith('mat'):
         annotations = _read_brainstorm_annotations(fname)
     else:
-        raise IOError('Unknown annotation file format "%s"' % fname)
+        raise OSError('Unknown annotation file format "%s"' % fname)
 
     if annotations is None:
-        raise IOError('No annotation data found in file "%s"' % fname)
+        raise OSError('No annotation data found in file "%s"' % fname)
     return annotations
 
 
@@ -1140,7 +1150,7 @@ def _read_annotations_csv(fname):
 
     Parameters
     ----------
-    fname : str
+    fname : path-like
         The filename.
 
     Returns
@@ -1175,7 +1185,7 @@ def _read_brainstorm_annotations(fname, orig_time=None):
 
     Parameters
     ----------
-    fname : str
+    fname : path-like
         The filename
     orig_time : float | int | instance of datetime | array of int | None
         A POSIX Timestamp, datetime or an array containing the timestamp as the
@@ -1402,7 +1412,7 @@ def events_from_annotations(raw, event_id="auto",
     ----------
     raw : instance of Raw
         The raw data for which Annotations are defined.
-    event_id : dict | callable | None | 'auto'
+    event_id : dict | callable | None | ``'auto'``
         Can be:
 
         - **dict**: map descriptions (keys) to integer event codes (values).

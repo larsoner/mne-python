@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """The documentation functions."""
 # Authors: Eric Larson <larson.eric.d@gmail.com>
 #
@@ -280,6 +279,10 @@ docdict['axes_cov_plot_topomap'] = _axes_list.format('axes', 'be length 1')
 docdict['axes_evoked_plot_topomap'] = _axes_list.format(
     'axes',
     'match the number of ``times`` provided (unless ``times`` is ``None``)')
+docdict['axes_montage'] = """
+axes : instance of Axes | instance of Axes3D | None
+    Axes to draw the sensors to. If ``kind='3d'``, axes must be an instance
+    of Axes3D. If None (default), a new axes will be created."""
 docdict['axes_plot_projs_topomap'] = _axes_list.format(
     'axes', 'match the number of projectors')
 docdict['axes_plot_topomap'] = _axes_base.format('axes', '', '', '')
@@ -308,8 +311,8 @@ azimuth : float
 
 docdict['bad_condition_maxwell_cond'] = """
 bad_condition : str
-    How to deal with ill-conditioned SSS matrices. Can be "error"
-    (default), "warning", "info", or "ignore".
+    How to deal with ill-conditioned SSS matrices. Can be ``"error"``
+    (default), ``"warning"``, ``"info"``, or ``"ignore"``.
 """
 
 docdict['bands_psd_topo'] = """
@@ -848,9 +851,9 @@ depth : None | float | dict
 """
 
 docdict['destination_maxwell_dest'] = """
-destination : str | array-like, shape (3,) | None
+destination : path-like | array-like, shape (3,) | None
     The destination location for the head. Can be ``None``, which
-    will not change the head position, or a string path to a FIF file
+    will not change the head position, or a path to a FIF file
     containing a MEG device<->head transformation, or a 3-element array
     giving the coordinates to translate to (with no rotations).
     For example, ``destination=(0, 0, 0.04)`` would translate the bases
@@ -1064,8 +1067,8 @@ events : array of int, shape (n_events, 3)
     The array of :term:`events`. The first column contains the event time in
     samples, with :term:`first_samp` included. The third column contains the
     event id.
-    If some events don't match the events of interest as specified by event_id,
-    they will be marked as ``IGNORED`` in the drop log."""
+    If some events don't match the events of interest as specified by
+    ``event_id``, they will be marked as ``IGNORED`` in the drop log."""
 
 docdict['evoked_by_event_type_returns'] = """
 evoked : instance of Evoked | list of Evoked
@@ -1511,8 +1514,8 @@ h_trans_bandwidth : float | str
 """
 
 docdict['head_pos'] = """
-head_pos : None | str | dict | tuple | array
-    Name of the position estimates file. Should be in the format of
+head_pos : None | path-like | dict | tuple | array
+    Path to the position estimates file. Should be in the format of
     the files produced by MaxFilter. If dict, keys should
     be the time points and entries should be 4x4 ``dev_head_t``
     matrices. If None, the original head position (from
@@ -1655,12 +1658,11 @@ _index_df_base = """
 index : {} | None
     Kind of index to use for the DataFrame. If ``None``, a sequential
     integer index (:class:`pandas.RangeIndex`) will be used. If ``'time'``, a
-    :class:`pandas.Float64Index`, :class:`pandas.Int64Index`, {}or
-    :class:`pandas.TimedeltaIndex` will be used
+    ``pandas.Index``{} or :class:`pandas.TimedeltaIndex` will be used
     (depending on the value of ``time_format``). {}
 """
 
-datetime = ':class:`pandas.DatetimeIndex`, '
+datetime = ', :class:`pandas.DatetimeIndex`,'
 multiindex = ('If a list of two or more string values, a '
               ':class:`pandas.MultiIndex` will be created. ')
 raw = ("'time'", datetime, '')
@@ -1768,6 +1770,56 @@ keep_his : bool
 
     .. warning:: This could mean that ``info`` is not fully
                  anonymized. Use with caution.
+"""
+
+docdict['kit_elp'] = """
+elp : path-like | array of shape (8, 3) | None
+    Digitizer points representing the location of the fiducials and the
+    marker coils with respect to the digitized head shape, or path to a
+    file containing these points.
+"""
+
+docdict['kit_hsp'] = """
+hsp : path-like | array of shape (n_points, 3) | None
+    Digitizer head shape points, or path to head shape file. If more than
+    10,000 points are in the head shape, they are automatically decimated.
+"""
+
+docdict['kit_mrk'] = """
+mrk : path-like | array of shape (5, 3) | list | None
+    Marker points representing the location of the marker coils with
+    respect to the MEG sensors, or path to a marker file.
+    If list, all of the markers will be averaged together.
+"""
+
+docdict['kit_slope'] = r"""
+slope : ``'+'`` | ``'-'``
+    How to interpret values on KIT trigger channels when synthesizing a
+    Neuromag-style stim channel. With ``'+'``\, a positive slope (low-to-high)
+    is interpreted as an event. With ``'-'``\, a negative slope (high-to-low)
+    is interpreted as an event.
+"""
+
+docdict['kit_stim'] = r"""
+stim : list of int | ``'<'`` | ``'>'`` | None
+    Channel-value correspondence when converting KIT trigger channels to a
+    Neuromag-style stim channel. For ``'<'``\, the largest values are
+    assigned to the first channel (default). For ``'>'``\, the largest
+    values are assigned to the last channel. Can also be specified as a
+    list of trigger channel indexes. If None, no synthesized channel is
+    generated.
+"""
+
+docdict['kit_stimcode'] = """
+stim_code : ``'binary'`` | ``'channel'``
+    How to decode trigger values from stim channels. ``'binary'`` read stim
+    channel events as binary code, 'channel' encodes channel number.
+"""
+
+docdict['kit_stimthresh'] = """
+stimthresh : float | None
+    The threshold level for accepting voltage changes in KIT trigger
+    channels as a trigger event. If None, stim must also be set to None.
 """
 
 docdict['kwargs_fun'] = """
@@ -1945,6 +1997,14 @@ match_case : bool
     If True (default), channel name matching will be case sensitive.
 
     .. versionadded:: 0.20
+"""
+
+docdict['max_dist_ieeg'] = """
+max_dist : float
+    The maximum distance to project a sensor to the pial surface in meters.
+    Sensors that are greater than this distance from the pial surface will
+    not be assigned locations. Projections can be done to the inflated or
+    flat brain.
 """
 
 docdict['max_iter_multitaper'] = """
@@ -2478,14 +2538,19 @@ per_sample : bool
 
 docdict['phase'] = """
 phase : str
-    Phase of the filter, only used if ``method='fir'``.
-    Symmetric linear-phase FIR filters are constructed, and if ``phase='zero'``
-    (default), the delay of this filter is compensated for, making it
-    non-causal. If ``phase='zero-double'``,
+    Phase of the filter.
+    When ``method='fir'``, symmetric linear-phase FIR filters are constructed,
+    and if ``phase='zero'`` (default), the delay of this filter is compensated
+    for, making it non-causal. If ``phase='zero-double'``,
     then this filter is applied twice, once forward, and once backward
     (also making it non-causal). If ``'minimum'``, then a minimum-phase filter
-    will be constricted and applied, which is causal but has weaker stop-band
+    will be constructed and applied, which is causal but has weaker stop-band
     suppression.
+    When ``method='iir'``, ``phase='zero'`` (default) or
+    ``phase='zero-double'`` constructs and applies IIR filter twice, once
+    forward, and once backward (making it non-causal) using filtfilt.
+    If ``phase='forward'``, it constructs and applies forward IIR filter using
+    lfilter.
 
     .. versionadded:: 0.13
 """
@@ -2594,6 +2659,11 @@ temperature : bool
     Temperature channels.
 gsr : bool
     Galvanic skin response channels.
+eyetrack : bool | str
+    Eyetracking channels. If True include all eyetracking channels. If False
+    (default) include none. If string it can be 'eyegaze' (to include
+    eye position channels) or 'pupil' (to include pupil-size
+    channels).
 include : list of str
     List of additional channels to include. If empty do not include
     any.
@@ -2796,6 +2866,11 @@ projection : bool
     must be set to ``False`` (the default in this case).
 """
 
+docdict['projs'] = """
+projs : list of Projection
+    List of computed projection vectors.
+"""
+
 docdict['projs_report'] = """
 projs : bool | None
     Whether to add SSP projector plots if projectors are present in
@@ -2913,8 +2988,8 @@ reg_affine : ndarray of float, shape (4, 4)
 
 docdict['regularize_maxwell_reg'] = """
 regularize : str | None
-    Basis regularization type, must be "in" or None.
-    "in" is the same algorithm as the "-regularize in" option in
+    Basis regularization type, must be ``"in"`` or None.
+    ``"in"`` is the same algorithm as the ``-regularize in`` option in
     MaxFilter™.
 """
 
@@ -3224,6 +3299,18 @@ size : float
     Side length of each subplot in inches.
 """
 
+docdict['skip_by_annotation'] = """
+skip_by_annotation : str | list of str
+    If a string (or list of str), any annotation segment that begins
+    with the given string will not be included in filtering, and
+    segments on either side of the given excluded annotated segment
+    will be filtered separately (i.e., as independent signals).
+    The default (``('edge', 'bad_acq_skip')`` will separately filter
+    any segments that were concatenated by :func:`mne.concatenate_raws`
+    or :meth:`mne.io.Raw.append`, or separated during acquisition.
+    To disable, provide an empty list. Only used if ``inst`` is raw.
+"""
+
 docdict['skip_by_annotation_maxwell'] = """
 skip_by_annotation : str | list of str
     If a string (or list of str), any annotation segment that begins
@@ -3333,7 +3420,7 @@ st_only : bool
 docdict['standardize_names'] = """
 standardize_names : bool
     If True, standardize MEG and EEG channel names to be
-    ``"MEG ###"`` and ``"EEG ###"``. If False (default), native
+    ``'MEG ###'`` and ``'EEG ###'``. If False (default), native
     channel names in the file will be used when possible.
 """
 
@@ -4444,7 +4531,7 @@ def %(name)s(%(signature)s):\n
 def deprecated_alias(dep_name, func, removed_in=None):
     """Inject a deprecated alias into the namespace."""
     if removed_in is None:
-        from .._version import __version__
+        from .. import __version__
         removed_in = __version__.split('.')[:2]
         removed_in[1] = str(int(removed_in[1]) + 1)
         removed_in = '.'.join(removed_in)

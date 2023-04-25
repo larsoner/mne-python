@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Authors: Denis A. Engemann <denis.engemann@gmail.com>
 #          Eric Larson <larson.eric.d@gmail.com>
 # License: Simplified BSD
@@ -11,7 +10,7 @@ from .write import (start_block, end_block, write_int, write_float,
                     write_string, write_float_matrix, write_int_matrix,
                     write_float_sparse, write_id, write_name_list_sanitized,
                     _safe_name_list)
-from .tag import find_tag
+from .tag import find_tag, _int_item, _float_item
 from .constants import FIFF
 from ..fixes import _csc_matrix_cast
 from ..utils import warn, _check_fname
@@ -138,15 +137,15 @@ _sss_info_ids = (FIFF.FIFF_SSS_JOB,
 _sss_info_writers = (write_int, write_int, write_float, write_int,
                      write_int, write_int, write_int, write_int,
                      write_float, write_float)
-_sss_info_casters = (int, int, np.array, int,
-                     int, int, np.array, int,
-                     float, float)
+_sss_info_casters = (_int_item, _int_item, np.array, _int_item,
+                     _int_item, _int_item, np.array, _int_item,
+                     _float_item, _float_item)
 
 _max_st_keys = ('job', 'subspcorr', 'buflen')
 _max_st_ids = (FIFF.FIFF_SSS_JOB, FIFF.FIFF_SSS_ST_CORR,
                FIFF.FIFF_SSS_ST_LENGTH)
 _max_st_writers = (write_int, write_float, write_float)
-_max_st_casters = (int, float, float)
+_max_st_casters = (_int_item, _float_item, _float_item)
 
 _sss_ctc_keys = ('block_id', 'date', 'creator', 'decoupler')
 _sss_ctc_ids = (FIFF.FIFF_BLOCK_ID,
@@ -228,7 +227,7 @@ def _read_maxfilter_record(fid, tree):
                     tag = read_tag(fid, pos)
                     chs = _safe_name_list(tag.data, 'read', 'proj_items_chs')
                     # This list can null chars in the last entry, e.g.:
-                    # [..., u'MEG2642', u'MEG2643', u'MEG2641\x00 ... \x00']
+                    # [..., 'MEG2642', 'MEG2643', 'MEG2641\x00 ... \x00']
                     chs[-1] = chs[-1].split('\x00')[0]
                     sss_ctc['proj_items_chs'] = chs
 

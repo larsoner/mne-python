@@ -129,7 +129,7 @@ def write_julian(fid, kind, data):
 
 def write_string(fid, kind, data):
     """Write a string tag."""
-    str_data = data.encode('latin1')
+    str_data = str(data).encode('latin1')
     data_size = len(str_data)  # therefore compute size here
     my_dtype = '>a'  # py2/3 compatible on writing -- don't ask me why
     if data_size > 0:
@@ -327,7 +327,7 @@ def start_file(fname, id_=None):
 
     Parameters
     ----------
-    fname : string | fid
+    fname : path-like | fid
         The name of the file to open. It is recommended
         that the name ends with .fif or .fif.gz. Can also be an
         already opened file.
@@ -368,7 +368,7 @@ def check_fiff_length(fid, close=True):
     if fid.tell() > 2147483648:  # 2 ** 31, FIFF uses signed 32-bit locations
         if close:
             fid.close()
-        raise IOError('FIFF file exceeded 2GB limit, please split file, reduce'
+        raise OSError('FIFF file exceeded 2GB limit, please split file, reduce'
                       ' split_size (if possible), or save to a different '
                       'format')
 
