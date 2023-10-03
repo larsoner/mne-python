@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="327">
+<style>@font-face{font-family:'ClearviewHwy';font-weight:normal;font-style:normal;src:url("data:application/font-woff;charset=utf-8;base64,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")format("woff");}</style>
+<style>text{font-family:'ClearviewHwy';font-weight:normal;font-style:normal;}</style>
+<rect width="100%" height="100%" style="fill:rgb(0,0,0);fill-opacity:0.1"></rect>
+<text transform="translate(593,256)" font-size="40" style="fill:rgb(254, 187, 43)">Eric Larson</text>
+<text transform="translate(285,106)" font-size="26" style="fill:rgb(223, 98, 99)">Teon Brooks</text>
+<text transform="translate(569,106)" font-size="26" style="fill:rgb(223, 98, 99)">Denis A. Engemann</text>
+<text transform="translate(107,209)" font-size="23" style="fill:rgb(212, 82, 112)">Alexandre Gramfort</text>
+<text transform="translate(407,217)" font-size="18" style="fill:rgb(189, 55, 134)">Jaakko Leppakangas</text>
+<text transform="translate(696,191)" font-size="18" style="fill:rgb(189, 55, 134)">Joan Massich</text>
+<text transform="translate(833,12)" font-size="15" style="fill:rgb(173, 39, 147)">Rob Luke</text>
+<text transform="translate(717,226)" font-size="15" style="fill:rgb(173, 39, 147)">Scott Huberty</text>
+<text transform="translate(261,56)" font-size="14" style="fill:rgb(167, 33, 151)">Christian Brodbeck</text>
+<text transform="translate(667,85)" font-size="13" style="fill:rgb(162, 29, 154)">Clemens Brunner</text>
+<text transform="translate(759,280)" font-size="13" style="fill:rgb(162, 29, 154)">Marijn van Vliet</text>
+<text transform="translate(604,302)" font-size="12" style="fill:rgb(156, 23, 158)">Mathieu Scheltienne</text>
+<text transform="translate(531,142)" font-size="11" style="fill:rgb(149, 17, 161)">Mainak Jas</text>
+<text transform="translate(17,20)" font-size="11" style="fill:rgb(149, 17, 161)">Martin Luessi</text>
+<text transform="translate(592,205)" font-size="11" style="fill:rgb(149, 17, 161)">Stefan Appelhoff</text>
+<text transform="translate(924,43)" font-size="11" style="fill:rgb(149, 17, 161)">Luke Bloy</text>
+<text transform="translate(816,139)" font-size="10" style="fill:rgb(142, 12, 164)">Daniel McCloy</text>
+<text transform="translate(299,291)" font-size="10" style="fill:rgb(142, 12, 164)">Thomas Hartmann</text>
+<text transform="translate(574,49)" font-size="10" style="fill:rgb(142, 12, 164)">Fede Raimondo</text>
+<text transform="translate(360,16)" font-size="10" style="fill:rgb(142, 12, 164)">Jona Sassenhagen</text>
+<text transform="translate(646,188)" font-size="10" style="fill:rgb(142, 12, 164)">Adam Li</text>
+<text transform="translate(497,154)" font-size="9" style="fill:rgb(136, 8, 166)">Christoph Dinh</text>
+<text transform="translate(898,70)" font-size="9" style="fill:rgb(136, 8, 166)">Proloy Das</text>
+<text transform="translate(251,172)" font-size="9" style="fill:rgb(136, 8, 166)">Alex Rockhill</text>
+<text transform="translate(546,123)" font-size="9" style="fill:rgb(136, 8, 166)">Ramonapariciog Apariciogarcia</text>
+<text transform="translate(503,78)" font-size="9" style="fill:rgb(136, 8, 166)">Chris Holdgraf</text>
+<text transform="translate(818,320)" font-size="9" style="fill:rgb(136, 8, 166)">George O'Neill</text>
+<text transform="translate(243,307)" font-size="9" style="fill:rgb(136, 8, 166)">Nicolas Barascud</text>
+<text transform="translate(94,222)" font-size="9" style="fill:rgb(136, 8, 166)">Dirk Gütlin</text>
+<text transform="translate(349,33)" font-size="9" style="fill:rgb(136, 8, 166)">Andrew Dykstra</text>
+<text transform="translate(676,201)" font-size="9" style="fill:rgb(136, 8, 166)">Marian Dovgialo</text>
+<text transform="translate(636,170)" font-size="8" style="fill:rgb(129, 4, 167)">Richard Höchenberger</text>
+<text transform="translate(608,60)" font-size="8" style="fill:rgb(129, 4, 167)">Phillip Alday</text>
+<text transform="translate(91,169)" font-size="8" style="fill:rgb(129, 4, 167)">Kyle Mathewson</text>
+<text transform="translate(850,189)" font-size="8" style="fill:rgb(129, 4, 167)">Mikołaj Magnuski</text>
+<text transform="translate(455,124)" font-size="7" style="fill:rgb(122, 2, 168)">Tristan Stenner</text>
+<text transform="translate(96,153)" font-size="7" style="fill:rgb(122, 2, 168)">Evan Hathaway</text>
+<text transform="translate(847,38)" font-size="7" style="fill:rgb(122, 2, 168)">Martin Billinger</text>
+<text transform="translate(214,276)" font-size="7" style="fill:rgb(122, 2, 168)">Moritz Gerster</text>
+<text transform="translate(360,189)" font-size="6" style="fill:rgb(114, 1, 168)">paulroujansky</text>
+<text transform="translate(51,30)" font-size="6" style="fill:rgb(114, 1, 168)">Dan G. Wakeman</text>
+<text transform="translate(413,282)" font-size="6" style="fill:rgb(114, 1, 168)">Jack Zhang</text>
+<text transform="translate(896,228)" font-size="6" style="fill:rgb(114, 1, 168)">Johann Benerradi</text>
+<text transform="translate(145,223)" font-size="6" style="fill:rgb(114, 1, 168)">Dmitrii Altukhov</text>
+<text transform="translate(713,46)" font-size="6" style="fill:rgb(114, 1, 168)">Alan Leggitt</text>
+<text transform="translate(776,69)" font-size="6" style="fill:rgb(114, 1, 168)">Jean-Remi King</text>
+<text transform="translate(2,140)" font-size="6" style="fill:rgb(114, 1, 168)">Marmaduke Woodman</text>
+<text transform="translate(585,264)" font-size="6" style="fill:rgb(114, 1, 168)">Christopher J. Bailey</text>
+<text transform="translate(90,102)" font-size="6" style="fill:rgb(114, 1, 168)">Henrich Kolkhorst</text>
+<text transform="translate(809,27)" font-size="6" style="fill:rgb(114, 1, 168)">Nick Ward</text>
+<text transform="translate(312,85)" font-size="6" style="fill:rgb(114, 1, 168)">Dimitri Papadopoulos Orfanos</text>
+<text transform="translate(723,139)" font-size="6" style="fill:rgb(114, 1, 168)">Tod Flak</text>
+<text transform="translate(834,18)" font-size="6" style="fill:rgb(114, 1, 168)">Simon Kern</text>
+<text transform="translate(640,264)" font-size="6" style="fill:rgb(114, 1, 168)">Valerii Chirkov</text>
+<text transform="translate(471,161)" font-size="6" style="fill:rgb(114, 1, 168)">Michiru Kaneda</text>
+<text transform="translate(64,66)" font-size="6" style="fill:rgb(114, 1, 168)">Martin Schulz</text>
+<text transform="translate(838,249)" font-size="6" style="fill:rgb(114, 1, 168)">Alessandro Tonin</text>
+<text transform="translate(899,143)" font-size="6" style="fill:rgb(114, 1, 168)">Richard Koehler</text>
+<text transform="translate(246,159)" font-size="6" style="fill:rgb(114, 1, 168)">Mark Wronkiewicz</text>
+<text transform="translate(151,110)" font-size="6" style="fill:rgb(114, 1, 168)">Keith Doelling</text>
+<text transform="translate(268,34)" font-size="6" style="fill:rgb(114, 1, 168)">Cristóbal Moënne-Loccoz</text>
+<text transform="translate(901,162)" font-size="6" style="fill:rgb(114, 1, 168)">Ross Maddox</text>
+<text transform="translate(937,206)" font-size="6" style="fill:rgb(114, 1, 168)">Jair Montoya</text>
+<text transform="translate(174,125)" font-size="6" style="fill:rgb(114, 1, 168)">Jacob Woessner</text>
+<text transform="translate(855,118)" font-size="6" style="fill:rgb(114, 1, 168)">Larry Eisenman</text>
+<text transform="translate(181,19)" font-size="6" style="fill:rgb(114, 1, 168)">Oleh Kozynets</text>
+<text transform="translate(711,72)" font-size="6" style="fill:rgb(114, 1, 168)">Steven Bethard</text>
+<text transform="translate(229,151)" font-size="6" style="fill:rgb(114, 1, 168)">Matthias Eberlein</text>
+<text transform="translate(190,64)" font-size="6" style="fill:rgb(114, 1, 168)">Hubert Banville</text>
+<text transform="translate(158,239)" font-size="6" style="fill:rgb(114, 1, 168)">Stefan Repplinger</text>
+<text transform="translate(476,66)" font-size="6" style="fill:rgb(114, 1, 168)">Alexandre Barachant</text>
+<text transform="translate(383,233)" font-size="6" style="fill:rgb(114, 1, 168)">Demetres Kostas</text>
+<text transform="translate(466,262)" font-size="6" style="fill:rgb(114, 1, 168)">Jesper Duemose Nielsen</text>
+<text transform="translate(37,92)" font-size="6" style="fill:rgb(114, 1, 168)">Abram Hindle</text>
+<text transform="translate(120,177)" font-size="6" style="fill:rgb(114, 1, 168)">Alexander Kovrig</text>
+<text transform="translate(837,179)" font-size="6" style="fill:rgb(114, 1, 168)">Liberty Hamilton</text>
+<text transform="translate(64,192)" font-size="6" style="fill:rgb(114, 1, 168)">Sara Sommariva</text>
+<text transform="translate(957,196)" font-size="6" style="fill:rgb(114, 1, 168)">Eduard Ort</text>
+<text transform="translate(413,225)" font-size="6" style="fill:rgb(114, 1, 168)">Tal Linzen</text>
+<text transform="translate(359,65)" font-size="6" style="fill:rgb(114, 1, 168)">Guillaume Dumas</text>
+<text transform="translate(206,9)" font-size="6" style="fill:rgb(114, 1, 168)">Yousra Bekhti</text>
+<text transform="translate(697,59)" font-size="6" style="fill:rgb(114, 1, 168)">Sebastiaan Mathot</text>
+<text transform="translate(453,15)" font-size="6" style="fill:rgb(114, 1, 168)">Zhi Zhang</text>
+<text transform="translate(799,148)" font-size="6" style="fill:rgb(114, 1, 168)">Louis Thibault</text>
+</svg>
