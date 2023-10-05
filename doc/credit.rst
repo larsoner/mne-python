@@ -31,7 +31,7 @@ Code credit
 
    .. grid-item-card:: mne.annotations
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/annotations.py
 
       .. image:: wordcloud/mne_annotations.svg
          :alt: mne.annotations word cloud
@@ -44,7 +44,7 @@ Code credit
 
    .. grid-item-card:: mne.beamformer
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/beamformer
 
       .. image:: wordcloud/mne_beamformer.svg
          :alt: mne.beamformer word cloud
@@ -57,7 +57,7 @@ Code credit
 
    .. grid-item-card:: mne.bem
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/bem.py
 
       .. image:: wordcloud/mne_bem.svg
          :alt: mne.bem word cloud
@@ -70,7 +70,7 @@ Code credit
 
    .. grid-item-card:: mne.channels
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/channels
 
       .. image:: wordcloud/mne_channels.svg
          :alt: mne.channels word cloud
@@ -83,7 +83,7 @@ Code credit
 
    .. grid-item-card:: mne.chpi
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/chpi.py
 
       .. image:: wordcloud/mne_chpi.svg
          :alt: mne.chpi word cloud
@@ -96,7 +96,7 @@ Code credit
 
    .. grid-item-card:: mne.commands
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/commands
 
       .. image:: wordcloud/mne_commands.svg
          :alt: mne.commands word cloud
@@ -109,7 +109,7 @@ Code credit
 
    .. grid-item-card:: mne.conftest
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/conftest.py
 
       .. image:: wordcloud/mne_conftest.svg
          :alt: mne.conftest word cloud
@@ -122,7 +122,7 @@ Code credit
 
    .. grid-item-card:: mne-connectivity (moved)
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne-connectivity (moved)
 
       .. image:: wordcloud/mne-connectivity_moved.svg
          :alt: mne-connectivity (moved) word cloud
@@ -135,7 +135,7 @@ Code credit
 
    .. grid-item-card:: mne.coreg
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/coreg.py
 
       .. image:: wordcloud/mne_coreg.svg
          :alt: mne.coreg word cloud
@@ -148,7 +148,7 @@ Code credit
 
    .. grid-item-card:: mne.cov
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/cov.py
 
       .. image:: wordcloud/mne_cov.svg
          :alt: mne.cov word cloud
@@ -161,7 +161,7 @@ Code credit
 
    .. grid-item-card:: mne.datasets
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/datasets
 
       .. image:: wordcloud/mne_datasets.svg
          :alt: mne.datasets word cloud
@@ -174,7 +174,7 @@ Code credit
 
    .. grid-item-card:: mne.decoding
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/decoding
 
       .. image:: wordcloud/mne_decoding.svg
          :alt: mne.decoding word cloud
@@ -187,7 +187,7 @@ Code credit
 
    .. grid-item-card:: mne.dipole
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/dipole.py
 
       .. image:: wordcloud/mne_dipole.svg
          :alt: mne.dipole word cloud
@@ -200,7 +200,7 @@ Code credit
 
    .. grid-item-card:: mne.epochs
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/epochs.py
 
       .. image:: wordcloud/mne_epochs.svg
          :alt: mne.epochs word cloud
@@ -213,7 +213,7 @@ Code credit
 
    .. grid-item-card:: mne.event
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/event.py
 
       .. image:: wordcloud/mne_event.svg
          :alt: mne.event word cloud
@@ -226,7 +226,7 @@ Code credit
 
    .. grid-item-card:: mne.evoked
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/evoked.py
 
       .. image:: wordcloud/mne_evoked.svg
          :alt: mne.evoked word cloud
@@ -239,7 +239,7 @@ Code credit
 
    .. grid-item-card:: mne.export
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/export
 
       .. image:: wordcloud/mne_export.svg
          :alt: mne.export word cloud
@@ -252,7 +252,7 @@ Code credit
 
    .. grid-item-card:: mne.filter
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/filter.py
 
       .. image:: wordcloud/mne_filter.svg
          :alt: mne.filter word cloud
@@ -265,7 +265,7 @@ Code credit
 
    .. grid-item-card:: mne.forward
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/forward
 
       .. image:: wordcloud/mne_forward.svg
          :alt: mne.forward word cloud
@@ -278,7 +278,7 @@ Code credit
 
    .. grid-item-card:: mne.gui
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/gui
 
       .. image:: wordcloud/mne_gui.svg
          :alt: mne.gui word cloud
@@ -291,7 +291,7 @@ Code credit
 
    .. grid-item-card:: mne.inverse_sparse
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/inverse_sparse
 
       .. image:: wordcloud/mne_inverse_sparse.svg
          :alt: mne.inverse_sparse word cloud
@@ -304,7 +304,7 @@ Code credit
 
    .. grid-item-card:: mne.io
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/io
 
       .. image:: wordcloud/mne_io.svg
          :alt: mne.io word cloud
@@ -317,7 +317,7 @@ Code credit
 
    .. grid-item-card:: mne.label
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/label.py
 
       .. image:: wordcloud/mne_label.svg
          :alt: mne.label word cloud
@@ -330,7 +330,7 @@ Code credit
 
    .. grid-item-card:: mne.minimum_norm
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/minimum_norm
 
       .. image:: wordcloud/mne_minimum_norm.svg
          :alt: mne.minimum_norm word cloud
@@ -343,7 +343,7 @@ Code credit
 
    .. grid-item-card:: mne.morph
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/morph.py
 
       .. image:: wordcloud/mne_morph.svg
          :alt: mne.morph word cloud
@@ -356,7 +356,7 @@ Code credit
 
    .. grid-item-card:: mne.preprocessing
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/preprocessing
 
       .. image:: wordcloud/mne_preprocessing.svg
          :alt: mne.preprocessing word cloud
@@ -369,7 +369,7 @@ Code credit
 
    .. grid-item-card:: mne.proj
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/proj.py
 
       .. image:: wordcloud/mne_proj.svg
          :alt: mne.proj word cloud
@@ -382,7 +382,7 @@ Code credit
 
    .. grid-item-card:: mne-realtime (moved)
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne-realtime (moved)
 
       .. image:: wordcloud/mne-realtime_moved.svg
          :alt: mne-realtime (moved) word cloud
@@ -395,7 +395,7 @@ Code credit
 
    .. grid-item-card:: mne.report
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/report
 
       .. image:: wordcloud/mne_report.svg
          :alt: mne.report word cloud
@@ -408,7 +408,7 @@ Code credit
 
    .. grid-item-card:: mne.simulation
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/simulation
 
       .. image:: wordcloud/mne_simulation.svg
          :alt: mne.simulation word cloud
@@ -421,7 +421,7 @@ Code credit
 
    .. grid-item-card:: mne.source_estimate
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/source_estimate.py
 
       .. image:: wordcloud/mne_source_estimate.svg
          :alt: mne.source_estimate word cloud
@@ -434,7 +434,7 @@ Code credit
 
    .. grid-item-card:: mne.source_space
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/source_space
 
       .. image:: wordcloud/mne_source_space.svg
          :alt: mne.source_space word cloud
@@ -447,7 +447,7 @@ Code credit
 
    .. grid-item-card:: mne.stats
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/stats
 
       .. image:: wordcloud/mne_stats.svg
          :alt: mne.stats word cloud
@@ -460,7 +460,7 @@ Code credit
 
    .. grid-item-card:: mne.surface
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/surface.py
 
       .. image:: wordcloud/mne_surface.svg
          :alt: mne.surface word cloud
@@ -473,7 +473,7 @@ Code credit
 
    .. grid-item-card:: mne.time_frequency
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/time_frequency
 
       .. image:: wordcloud/mne_time_frequency.svg
          :alt: mne.time_frequency word cloud
@@ -486,7 +486,7 @@ Code credit
 
    .. grid-item-card:: mne.transforms
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/blame/main/mne/transforms.py
 
       .. image:: wordcloud/mne_transforms.svg
          :alt: mne.transforms word cloud
@@ -499,7 +499,7 @@ Code credit
 
    .. grid-item-card:: mne.utils
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/utils
 
       .. image:: wordcloud/mne_utils.svg
          :alt: mne.utils word cloud
@@ -512,7 +512,7 @@ Code credit
 
    .. grid-item-card:: mne.viz
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/mne/viz
 
       .. image:: wordcloud/mne_viz.svg
          :alt: mne.viz word cloud
@@ -525,7 +525,7 @@ Code credit
 
    .. grid-item-card:: doc
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/doc
 
       .. image:: wordcloud/doc.svg
          :alt: doc word cloud
@@ -538,7 +538,7 @@ Code credit
 
    .. grid-item-card:: examples
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/examples
 
       .. image:: wordcloud/examples.svg
          :alt: examples word cloud
@@ -551,7 +551,7 @@ Code credit
 
    .. grid-item-card:: tutorials
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/tutorials
 
       .. image:: wordcloud/tutorials.svg
          :alt: tutorials word cloud
@@ -564,7 +564,7 @@ Code credit
 
    .. grid-item-card:: maintenance
       :class-card: overflow-auto
-      :link: https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}
+      :link: https://github.com/mne-tools/mne-python/tree/main/maintenance
 
       .. image:: wordcloud/maintenance.svg
          :alt: maintenance word cloud

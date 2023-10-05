@@ -5,7 +5,6 @@ Run ./tools/dev_reports/credit.sh first.
 TODO:
 - Remove orphan by linking somewhere
 - Populate examples/ and tutorials/
-- Link from names to GitHub
 """
 from pathlib import Path
 from collections import defaultdict
@@ -301,9 +300,9 @@ Code credit
     )
     for mi, (mod, counts) in enumerate(mod_stats.items()):
         # if there are 10 this is 100, if there are 100 this is 100
-        height = int(round(150 * np.log10(len(counts))))
+        height = int(round(100 * np.log10(len(counts))))
         cloud = wordcloud.WordCloud(
-            width=1000,
+            width=800,
             height=height,
             max_font_size=max_font_size,
             min_font_size=min_font_size,
@@ -331,8 +330,8 @@ Code credit
         svg_code = svg_code.replace(rect_fill, f"{rect_fill};fill-opacity:0.1")
         svg_path_file.write_text(svg_code, encoding="utf-8")
         kind = "blame" if mod in mod_file_map else "tree"
-        link_mod = mod_file_map.get(mod, mod)
-        link = f"https://github.com/mne-tools/mne-python/{kind}/main/mne/{link_mod}"
+        link_mod = mod_file_map.get(mod, mod.replace(".", "/"))
+        link = f"https://github.com/mne-tools/mne-python/{kind}/main/{link_mod}"
         fid.write(
             f"""
 
