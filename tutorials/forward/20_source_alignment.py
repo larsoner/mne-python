@@ -13,10 +13,12 @@ understanding the different coordinate frames involved in this process.
 Let's start out by loading some data.
 """
 
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 # %%
 
-import numpy as np
 import nibabel as nib
+import numpy as np
 from scipy import linalg
 
 import mne
@@ -66,8 +68,7 @@ t1_mgh = nib.MGHImage(t1w.dataobj, t1w.affine)
 # to their equivalent locations in another. The three main coordinate frames
 # are:
 #
-# * :blue:`"meg"`: the coordinate frame for the physical locations of MEG
-#   sensors
+# * :blue:`"meg"`: the coordinate frame for the physical locations of MEG sensors
 # * :gray:`"mri"`: the coordinate frame for MRI images, and scalp/skull/brain
 #   surfaces derived from the MRI images
 # * :pink:`"head"`: the coordinate frame for digitized sensor locations and
@@ -111,17 +112,17 @@ fig = mne.viz.plot_alignment(
 )
 mne.viz.set_3d_view(fig, 45, 90, distance=0.6, focalpoint=(0.0, 0.0, 0.0))
 print(
-    "Distance from head origin to MEG origin: %0.1f mm"
-    % (1000 * np.linalg.norm(raw.info["dev_head_t"]["trans"][:3, 3]))
+    "Distance from head origin to MEG origin: "
+    f"{1000 * np.linalg.norm(raw.info["dev_head_t"]["trans"][:3, 3]):.1f} mm"
 )
 print(
-    "Distance from head origin to MRI origin: %0.1f mm"
-    % (1000 * np.linalg.norm(trans["trans"][:3, 3]))
+    "Distance from head origin to MRI origin: "
+    f"{1000 * np.linalg.norm(trans["trans"][:3, 3]):.1f} mm"
 )
 dists = mne.dig_mri_distances(raw.info, trans, "sample", subjects_dir=subjects_dir)
 print(
-    "Distance from %s digitized points to head surface: %0.1f mm"
-    % (len(dists), 1000 * np.mean(dists))
+    f"Distance from {len(dists)} digitized points to head surface: "
+    f"{1000 * np.mean(dists):0.1f} mm"
 )
 
 # %%

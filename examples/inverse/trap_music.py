@@ -12,14 +12,14 @@ Compute a Truncated Recursively Applied and Projected MUltiple Signal Classifica
 # Author: Théodore Papadopoulo <Theodore.Papadopoulo@inria.fr>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 # %%
 
 import mne
-
-from mne.datasets import sample
 from mne.beamformer import trap_music
-from mne.viz import plot_dipole_locations, plot_dipole_amplitudes
+from mne.datasets import sample
+from mne.viz import plot_dipole_amplitudes, plot_dipole_locations
 
 print(__doc__)
 

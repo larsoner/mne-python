@@ -2,6 +2,7 @@
 # Authors: Eric Larson <larson.eric.d@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import atexit
 import json
@@ -9,20 +10,22 @@ import multiprocessing
 import os
 import os.path as op
 import platform
-import re
 import shutil
 import subprocess
 import sys
 import tempfile
-from functools import partial
+from functools import lru_cache, partial
 from importlib import import_module
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
 
-from .check import _validate_type, _check_qt_version, _check_option, _check_fname
+from packaging.version import parse
+
+from ._logging import logger, warn
+from .check import _check_fname, _check_option, _check_qt_version, _validate_type
 from .docs import fill_doc
 from .misc import _pl
-from ._logging import warn, logger
-
 
 _temp_home_dir = None
 
@@ -41,7 +44,7 @@ def set_cache_dir(cache_dir):
         temporary file storage.
     """
     if cache_dir is not None and not op.exists(cache_dir):
-        raise OSError("Directory %s does not exist" % cache_dir)
+        raise OSError(f"Directory {cache_dir} does not exist")
 
     set_config("MNE_CACHE_DIR", cache_dir, set_env=False)
 
@@ -160,7 +163,9 @@ _known_config_types = {
     "MNE_DATASETS_VISUAL_92_CATEGORIES_PATH": "str, path for visual_92_categories data",
     "MNE_DATASETS_KILOWORD_PATH": "str, path for kiloword data",
     "MNE_DATASETS_FIELDTRIP_CMC_PATH": "str, path for fieldtrip_cmc data",
+    "MNE_DATASETS_PHANTOM_KIT_PATH": "str, path for phantom_kit data",
     "MNE_DATASETS_PHANTOM_4DBTI_PATH": "str, path for phantom_4dbti data",
+    "MNE_DATASETS_PHANTOM_KERNEL_PATH": "str, path for phantom_kernel data",
     "MNE_DATASETS_LIMO_PATH": "str, path for limo data",
     "MNE_DATASETS_REFMEG_NOISE_PATH": "str, path for refmeg_noise data",
     "MNE_DATASETS_SSVEP_PATH": "str, path for ssvep data",
@@ -206,19 +211,20 @@ _known_config_wildcards = (
     "MNE_DATASETS_FNIRS",  # mne-nirs
     "MNE_NIRS",  # mne-nirs
     "MNE_KIT2FIFF",  # mne-kit-gui
+    "MNE_ICALABEL",  # mne-icalabel
 )
 
 
 def _load_config(config_path, raise_error=False):
     """Safely load a config file."""
-    with open(config_path, "r") as fid:
+    with open(config_path) as fid:
         try:
             config = json.load(fid)
         except ValueError:
             # No JSON object could be decoded --> corrupt file?
             msg = (
-                "The MNE-Python config file (%s) is not a valid JSON "
-                "file and might be corrupted" % config_path
+                f"The MNE-Python config file ({config_path}) is not a valid JSON "
+                "file and might be corrupted"
             )
             if raise_error:
                 raise RuntimeError(msg)
@@ -308,23 +314,22 @@ def get_config(key=None, default=None, raise_error=False, home_dir=None, use_env
     elif raise_error is True and key not in config:
         loc_env = "the environment or in the " if use_env else ""
         meth_env = (
-            ('either os.environ["%s"] = VALUE for a temporary ' "solution, or " % key)
+            (f'either os.environ["{key}"] = VALUE for a temporary solution, or ')
             if use_env
             else ""
         )
         extra_env = (
-            " You can also set the environment variable before " "running python."
+            " You can also set the environment variable before running python."
             if use_env
             else ""
         )
         meth_file = (
-            'mne.utils.set_config("%s", VALUE, set_env=True) '
-            "for a permanent one" % key
+            f'mne.utils.set_config("{key}", VALUE, set_env=True) for a permanent one'
         )
         raise KeyError(
-            'Key "%s" not found in %s'
-            "the mne-python config file (%s). "
-            "Try %s%s.%s" % (key, loc_env, config_path, meth_env, meth_file, extra_env)
+            f'Key "{key}" not found in {loc_env}'
+            f"the mne-python config file ({config_path}). "
+            f"Try {meth_env}{meth_file}.{extra_env}"
         )
     else:
         return config.get(key, default)
@@ -361,7 +366,7 @@ def set_config(key, value, home_dir=None, set_env=True):
     if key not in _known_config_types and not any(
         key.startswith(k) for k in _known_config_wildcards
     ):
-        warn('Setting non-standard config type: "%s"' % key)
+        warn(f'Setting non-standard config type: "{key}"')
 
     # Read all previous values
     config_path = get_config_path(home_dir=home_dir)
@@ -370,8 +375,7 @@ def set_config(key, value, home_dir=None, set_env=True):
     else:
         config = dict()
         logger.info(
-            "Attempting to create new mne-python configuration "
-            "file:\n%s" % config_path
+            f"Attempting to create new mne-python configuration file:\n{config_path}"
         )
     if value is None:
         config.pop(key, None)
@@ -462,16 +466,34 @@ def get_subjects_dir(subjects_dir=None, raise_error=False):
     value : Path | None
         The SUBJECTS_DIR value.
     """
+    from_config = False
     if subjects_dir is None:
         subjects_dir = get_config("SUBJECTS_DIR", raise_error=raise_error)
+        from_config = True
     if subjects_dir is not None:
-        subjects_dir = _check_fname(
-            fname=subjects_dir,
-            overwrite="read",
-            must_exist=True,
-            need_dir=True,
-            name="subjects_dir",
-        )
+        # Emit a nice error or warning if their config is bad
+        try:
+            subjects_dir = _check_fname(
+                fname=subjects_dir,
+                overwrite="read",
+                must_exist=True,
+                need_dir=True,
+                name="subjects_dir",
+            )
+        except FileNotFoundError:
+            if from_config:
+                msg = (
+                    "SUBJECTS_DIR in your MNE-Python configuration or environment "
+                    "does not exist, consider using mne.set_config to fix it: "
+                    f"{subjects_dir}"
+                )
+                if raise_error:
+                    raise FileNotFoundError(msg) from None
+                else:
+                    warn(msg)
+            elif raise_error:
+                raise
+
     return subjects_dir
 
 
@@ -491,7 +513,7 @@ def _get_stim_channel(stim_channel, info, raise_error=True):
 
     Returns
     -------
-    stim_channel : str | list of str
+    stim_channel : list of str
         The name of the stim channel(s) to use
     """
     from .._fiff.pick import pick_types
@@ -510,7 +532,7 @@ def _get_stim_channel(stim_channel, info, raise_error=True):
     while ch is not None and ch in info["ch_names"]:
         stim_channel.append(ch)
         ch_count += 1
-        ch = get_config("MNE_STIM_CHANNEL_%d" % ch_count)
+        ch = get_config(f"MNE_STIM_CHANNEL_{ch_count}")
     if ch_count > 0:
         return stim_channel
 
@@ -520,19 +542,18 @@ def _get_stim_channel(stim_channel, info, raise_error=True):
         return ["STI 014"]
 
     stim_channel = pick_types(info, meg=False, ref_meg=False, stim=True)
-    if len(stim_channel) > 0:
-        stim_channel = [info["ch_names"][ch_] for ch_ in stim_channel]
-    elif raise_error:
+    if len(stim_channel) == 0 and raise_error:
         raise ValueError(
             "No stim channels found. Consider specifying them "
             "manually using the 'stim_channel' parameter."
         )
+    stim_channel = [info["ch_names"][ch_] for ch_ in stim_channel]
     return stim_channel
 
 
 def _get_root_dir():
     """Get as close to the repo root as possible."""
-    root_dir = Path(__file__).parent.parent.expanduser().absolute()
+    root_dir = Path(__file__).parents[1]
     up_dir = root_dir.parent
     if (up_dir / "setup.py").is_file() and all(
         (up_dir / x).is_dir() for x in ("mne", "examples", "doc")
@@ -569,6 +590,7 @@ print(gi.version); \
 print(gi.renderer)"""
 
 
+@lru_cache(maxsize=1)
 def _get_gpu_info():
     # Once https://github.com/pyvista/pyvista/pull/2250 is merged and PyVista
     # does a release, we can triage based on version > 0.33.2
@@ -581,7 +603,14 @@ def _get_gpu_info():
     return out
 
 
-def sys_info(fid=None, show_paths=False, *, dependencies="user", unicode=True):
+def sys_info(
+    fid=None,
+    show_paths=False,
+    *,
+    dependencies="user",
+    unicode=True,
+    check_version=True,
+):
     """Print system information.
 
     This function prints system information useful when triaging bugs.
@@ -600,21 +629,18 @@ def sys_info(fid=None, show_paths=False, *, dependencies="user", unicode=True):
         Include Unicode symbols in output.
 
         .. versionadded:: 0.24
+    check_version : bool | float
+        If True (default), attempt to check that the version of MNE-Python is up to date
+        with the latest release on GitHub. Can be a float to give a different timeout
+        (in sec) from the default (2 sec).
+
+        .. versionadded:: 1.6
     """
     _validate_type(dependencies, str)
     _check_option("dependencies", dependencies, ("user", "developer"))
+    _validate_type(check_version, (bool, "numeric"), "check_version")
     ljust = 24 if dependencies == "developer" else 21
     platform_str = platform.platform()
-    if platform.system() == "Darwin" and sys.version_info[:2] < (3, 8):
-        # platform.platform() in Python < 3.8 doesn't call
-        # platform.mac_ver() if we're on Darwin, so we don't get a nice macOS
-        # version number. Therefore, let's do this manually here.
-        macos_ver = platform.mac_ver()[0]
-        macos_architecture = re.findall("Darwin-.*?-(.*)", platform_str)
-        if macos_architecture:
-            macos_architecture = macos_architecture[0]
-            platform_str = f"macOS-{macos_ver}-{macos_architecture}"
-        del macos_ver, macos_architecture
 
     out = partial(print, end="", file=fid)
     out("Platform".ljust(ljust) + platform_str + "\n")
@@ -639,8 +665,6 @@ def sys_info(fid=None, show_paths=False, *, dependencies="user", unicode=True):
         "numpy",
         "scipy",
         "matplotlib",
-        "pooch",
-        "jinja2",
         "",
         "# Numerical (optional)",
         "sklearn",
@@ -651,6 +675,8 @@ def sys_info(fid=None, show_paths=False, *, dependencies="user", unicode=True):
         "openmeeg",
         "cupy",
         "pandas",
+        "h5io",
+        "h5py",
         "",
         "# Visualization (optional)",
         "pyvista",
@@ -674,6 +700,11 @@ def sys_info(fid=None, show_paths=False, *, dependencies="user", unicode=True):
         "mne-connectivity",
         "mne-icalabel",
         "mne-bids-pipeline",
+        "neo",
+        "eeglabio",
+        "edfio",
+        "mffpy",
+        "pybv",
         "",
     )
     if dependencies == "developer":
@@ -681,20 +712,34 @@ def sys_info(fid=None, show_paths=False, *, dependencies="user", unicode=True):
             "# Testing",
             "pytest",
             "nbclient",
+            "statsmodels",
             "numpydoc",
             "flake8",
             "pydocstyle",
+            "nitime",
+            "imageio",
+            "imageio-ffmpeg",
+            "snirf",
             "",
             "# Documentation",
             "sphinx",
             "sphinx-gallery",
             "pydata-sphinx-theme",
             "",
+            "# Infrastructure",
+            "decorator",
+            "jinja2",
+            # "lazy-loader",
+            "packaging",
+            "pooch",
+            "tqdm",
+            "",
         )
     try:
         unicode = unicode and (sys.stdout.encoding.lower().startswith("utf"))
     except Exception:  # in case someone overrides sys.stdout in an unsafe way
         unicode = False
+    mne_version_good = True
     for mi, mod_name in enumerate(use_mod_names):
         # upcoming break
         if mod_name == "":  # break
@@ -719,7 +764,16 @@ def sys_info(fid=None, show_paths=False, *, dependencies="user", unicode=True):
         except Exception:
             unavailable.append(mod_name)
         else:
-            out(f"{pre}☑ " if unicode else " + ")
+            mark = "☑" if unicode else "+"
+            mne_extra = ""
+            if mod_name == "mne" and check_version:
+                timeout = 2.0 if check_version is True else float(check_version)
+                mne_version_good, mne_extra = _check_mne_version(timeout)
+                if mne_version_good is None:
+                    mne_version_good = True
+                elif not mne_version_good:
+                    mark = "☒" if unicode else "X"
+            out(f"{pre}{mark} " if unicode else f" {mark} ")
             out(f"{mod_name}".ljust(ljust))
             if mod_name == "vtk":
                 vtk_version = mod.vtkVersion()
@@ -747,6 +801,9 @@ def sys_info(fid=None, show_paths=False, *, dependencies="user", unicode=True):
                     out(" (OpenGL unavailable)")
                 else:
                     out(f" (OpenGL {version} via {renderer})")
+            elif mod_name == "mne":
+                out(f" ({mne_extra})")
+            # Now comes stuff after the version
             if show_paths:
                 if last:
                     pre = "   "
@@ -756,3 +813,42 @@ def sys_info(fid=None, show_paths=False, *, dependencies="user", unicode=True):
                     pre = " | "
                 out(f'\n{pre}{" " * ljust}{op.dirname(mod.__file__)}')
             out("\n")
+
+    if not mne_version_good:
+        out(
+            "\nTo update to the latest supported release version to get bugfixes and "
+            "improvements, visit "
+            "https://mne.tools/stable/install/updating.html\n"
+        )
+
+
+def _get_latest_version(timeout):
+    # Bandit complains about urlopen, but we know the URL here
+    url = "https://api.github.com/repos/mne-tools/mne-python/releases/latest"
+    try:
+        with urlopen(url, timeout=timeout) as f:  # nosec
+            response = json.load(f)
+    except (URLError, TimeoutError) as err:
+        # Triage error type
+        if "SSL" in str(err):
+            return "SSL error"
+        elif "timed out" in str(err):
+            return f"timeout after {timeout} sec"
+        else:
+            return f"unknown error: {err}"
+    else:
+        return response["tag_name"].lstrip("v") or "version unknown"
+
+
+def _check_mne_version(timeout):
+    rel_ver = _get_latest_version(timeout)
+    if not rel_ver[0].isnumeric():
+        return None, (f"unable to check for latest version on GitHub, {rel_ver}")
+    rel_ver = parse(rel_ver)
+    this_ver = parse(import_module("mne").__version__)
+    if this_ver > rel_ver:
+        return True, f"devel, latest release is {rel_ver}"
+    if this_ver == rel_ver:
+        return True, "latest release"
+    else:
+        return False, f"outdated, release {rel_ver} is available!"

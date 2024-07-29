@@ -2,13 +2,14 @@
 #          The statsmodels folks for AR yule_walker
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import numpy as np
 from scipy import linalg
 
+from .._fiff.pick import _picks_by_type, _picks_to_idx, pick_info
 from ..defaults import _handle_default
-from .._fiff.pick import _picks_to_idx, _picks_by_type, pick_info
-from ..utils import verbose, _apply_scaling_array
+from ..utils import _apply_scaling_array, verbose
 
 
 def _yule_walker(X, order=1):

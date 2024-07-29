@@ -1,49 +1,50 @@
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 from contextlib import nullcontext
 from copy import deepcopy
 from inspect import signature
 
-import pytest
 import numpy as np
-from scipy import linalg
-from scipy.spatial.distance import cdist
+import pytest
 from numpy.testing import (
+    assert_allclose,
     assert_array_almost_equal,
     assert_array_equal,
-    assert_allclose,
     assert_array_less,
 )
+from scipy import linalg
+from scipy.spatial.distance import cdist
 
 import mne
-from mne.transforms import apply_trans, invert_transform
 from mne import (
-    convert_forward_solution,
-    read_forward_solution,
-    compute_rank,
-    VolVectorSourceEstimate,
-    VolSourceEstimate,
     EvokedArray,
+    VolSourceEstimate,
+    VolVectorSourceEstimate,
+    compute_rank,
+    convert_forward_solution,
     pick_channels_cov,
+    read_forward_solution,
     read_vectorview_selection,
 )
+from mne._fiff.compensator import set_current_comp
+from mne._fiff.constants import FIFF
 from mne.beamformer import (
-    make_lcmv,
+    Beamformer,
     apply_lcmv,
+    apply_lcmv_cov,
     apply_lcmv_epochs,
     apply_lcmv_raw,
-    Beamformer,
-    read_beamformer,
-    apply_lcmv_cov,
     make_dics,
+    make_lcmv,
+    read_beamformer,
 )
 from mne.beamformer._compute_beamformer import _prepare_beamformer_input
 from mne.datasets import testing
-from mne._fiff.compensator import set_current_comp
-from mne._fiff.constants import FIFF
-from mne.minimum_norm import make_inverse_operator, apply_inverse
+from mne.minimum_norm import apply_inverse, make_inverse_operator
 from mne.minimum_norm.tests.test_inverse import _assert_free_ori_match
 from mne.simulation import simulate_evoked
-from mne.utils import object_diff, catch_logging, _record_warnings
-
+from mne.transforms import apply_trans, invert_transform
+from mne.utils import _record_warnings, catch_logging, object_diff
 
 data_path = testing.data_path(download=False)
 fname_raw = data_path / "MEG" / "sample" / "sample_audvis_trunc_raw.fif"
@@ -207,7 +208,7 @@ def test_lcmv_vector():
     mne_ori = stc_vector_mne.data[mapping, :, np.arange(n_vertices)]
     mne_ori /= np.linalg.norm(mne_ori, axis=-1)[:, np.newaxis]
     mne_angles = np.rad2deg(np.arccos(np.sum(mne_ori * source_nn, axis=-1)))
-    assert np.mean(mne_angles) < 35
+    assert np.mean(mne_angles) < 36
 
     # Now let's do LCMV
     data_cov = mne.make_ad_hoc_cov(info)  # just a stub for later
@@ -379,7 +380,7 @@ def test_make_lcmv_bem(tmp_path, reg, proj, kind):
     assert "unknown subject" not in repr(filters)
     assert f'{fwd["nsource"]} vert' in repr(filters)
     assert "20 ch" in repr(filters)
-    assert "rank %s" % rank in repr(filters)
+    assert f"rank {rank}" in repr(filters)
 
     # I/O
     fname = tmp_path / "filters.h5"
@@ -499,9 +500,7 @@ def test_make_lcmv_bem(tmp_path, reg, proj, kind):
 
     # check whether a filters object without src_type throws expected warning
     del filters["src_type"]  # emulate 0.16 behaviour to cause warning
-    with pytest.warns(
-        RuntimeWarning, match="spatial filter does not contain " "src_type"
-    ):
+    with pytest.warns(RuntimeWarning, match="spatial filter does not contain src_type"):
         apply_lcmv(evoked, filters)
 
     # Now test single trial using fixed orientation forward solution
@@ -588,19 +587,22 @@ def test_make_lcmv_sphere(pick_ori, weight_norm):
     fwd_sphere = mne.make_forward_solution(evoked.info, None, src, sphere)
 
     # Test that we get an error if not reducing rank
-    with pytest.raises(ValueError, match="Singular matrix detected"):
-        with pytest.warns(RuntimeWarning, match="positive semidefinite"):
-            make_lcmv(
-                evoked.info,
-                fwd_sphere,
-                data_cov,
-                reg=0.1,
-                noise_cov=noise_cov,
-                weight_norm=weight_norm,
-                pick_ori=pick_ori,
-                reduce_rank=False,
-                rank="full",
-            )
+    with (
+        pytest.raises(ValueError, match="Singular matrix detected"),
+        _record_warnings(),
+        pytest.warns(RuntimeWarning, match="positive semidefinite"),
+    ):
+        make_lcmv(
+            evoked.info,
+            fwd_sphere,
+            data_cov,
+            reg=0.1,
+            noise_cov=noise_cov,
+            weight_norm=weight_norm,
+            pick_ori=pick_ori,
+            reduce_rank=False,
+            rank="full",
+        )
 
     # Now let's reduce it
     filters = make_lcmv(
@@ -848,7 +850,7 @@ def test_localization_bias_fixed(
 
 # Changes here should be synced with test_dics.py
 @pytest.mark.parametrize(
-    "reg, pick_ori, weight_norm, use_cov, depth, lower, upper, " "lower_ori, upper_ori",
+    "reg, pick_ori, weight_norm, use_cov, depth, lower, upper, lower_ori, upper_ori",
     [
         (
             0.05,

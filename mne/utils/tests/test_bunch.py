@@ -2,10 +2,12 @@
 #          Eric Larson <larson.eric.d@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import pickle
+
 from mne.utils import BunchConstNamed
-from mne.utils._bunch import NamedInt, NamedFloat
+from mne.utils._bunch import NamedFloat, NamedInt
 
 
 def test_pickle():

@@ -5,87 +5,88 @@
 #          Teon Brooks <teon.brooks@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-import io
-import dataclasses
-from dataclasses import dataclass
-from functools import partial
-from typing import Tuple, Optional
-from collections.abc import Sequence
+from __future__ import annotations  # only needed for Python ≤ 3.9
+
 import base64
-from io import BytesIO, StringIO
+import copy
+import dataclasses
+import fnmatch
+import io
 import os
 import os.path as op
-from pathlib import Path
-import fnmatch
 import re
-from shutil import copyfile
 import time
 import warnings
 import webbrowser
+from collections.abc import Sequence
+from dataclasses import dataclass
+from functools import partial
+from io import BytesIO, StringIO
+from pathlib import Path
+from shutil import copyfile
 
 import numpy as np
 
 from .. import __version__ as MNE_VERSION
-from ..evoked import read_evokeds, Evoked
-from ..event import read_events
-from ..cov import read_cov, Covariance
-from ..html_templates import _get_html_template
-from ..source_estimate import read_source_estimate, SourceEstimate
-from ..transforms import read_trans, Transform
-from ..utils import sys_info
-from .._fiff.meas_info import Info
-from ..defaults import _handle_default
-from ..io import read_raw, BaseRaw
-from ..io._read_raw import _get_supported as _get_extension_reader_map
-from .._fiff.meas_info import read_info
+from .._fiff.meas_info import Info, read_info
 from .._fiff.pick import _DATA_CH_TYPES_SPLIT
+from .._freesurfer import _mri_orientation, _reorient_image
+from ..cov import Covariance, read_cov
+from ..defaults import _handle_default
+from ..epochs import BaseEpochs, read_epochs
+from ..event import read_events
+from ..evoked import Evoked, read_evokeds
+from ..forward import Forward, read_forward_solution
+from ..html_templates import _get_html_template
+from ..io import BaseRaw, read_raw
+from ..io._read_raw import _get_supported as _get_extension_reader_map
+from ..minimum_norm import InverseOperator, read_inverse_operator
+from ..parallel import parallel_func
+from ..preprocessing.ica import read_ica
 from ..proj import read_proj
-from .._freesurfer import _reorient_image, _mri_orientation
+from ..source_estimate import SourceEstimate, read_source_estimate
+from ..surface import dig_mri_distances
+from ..transforms import Transform, read_trans
 from ..utils import (
-    logger,
-    verbose,
-    get_subjects_dir,
-    warn,
-    _ensure_int,
-    fill_doc,
-    _check_option,
-    _validate_type,
-    _safe_input,
-    _path_like,
-    use_log_level,
-    _check_fname,
-    _pl,
     _check_ch_locs,
+    _check_fname,
+    _check_option,
+    _ensure_int,
     _import_h5io_funcs,
-    _verbose_safe_false,
-    check_version,
     _import_nibabel,
+    _path_like,
+    _pl,
+    _safe_input,
+    _validate_type,
+    _verbose_safe_false,
+    fill_doc,
+    get_subjects_dir,
+    logger,
+    sys_info,
+    use_log_level,
+    verbose,
+    warn,
 )
 from ..utils.spectrum import _split_psd_kwargs
 from ..viz import (
-    plot_events,
-    plot_alignment,
-    plot_cov,
-    plot_projs_topomap,
-    plot_compare_evokeds,
-    set_3d_view,
-    get_3d_backend,
     Figure3D,
-    use_browser_backend,
     _get_plot_ch_type,
     create_3d_figure,
+    get_3d_backend,
+    plot_alignment,
+    plot_compare_evokeds,
+    plot_cov,
+    plot_events,
+    plot_projs_topomap,
+    set_3d_view,
+    use_browser_backend,
 )
 from ..viz._brain.view import views_dicts
-from ..viz.misc import _plot_mri_contours, _get_bem_plotting_surfaces
-from ..viz.utils import _ndarray_to_fig, tight_layout
 from ..viz._scraper import _mne_qt_browser_screenshot
-from ..forward import read_forward_solution, Forward
-from ..epochs import read_epochs, BaseEpochs
-from ..preprocessing.ica import read_ica
-from ..surface import dig_mri_distances
-from ..minimum_norm import read_inverse_operator, InverseOperator
-from ..parallel import parallel_func
+from ..viz.misc import _get_bem_plotting_surfaces, _plot_mri_contours
+from ..viz.utils import _ndarray_to_fig
 
 _BEM_VIEWS = ("axial", "sagittal", "coronal")
 
@@ -141,9 +142,8 @@ CONTENT_ORDER = (
 )
 
 html_include_dir = Path(__file__).parent / "js_and_css"
-template_dir = Path(__file__).parent / "templates"
 JAVASCRIPT = (html_include_dir / "report.js").read_text(encoding="utf-8")
-CSS = (html_include_dir / "report.sass").read_text(encoding="utf-8")
+CSS = (html_include_dir / "report.css").read_text(encoding="utf-8")
 
 MAX_IMG_RES = 100  # in dots per inch
 MAX_IMG_WIDTH = 850  # in pixels
@@ -300,13 +300,13 @@ def _html_element(*, id_, div_klass, html, title, tags):
 @dataclass
 class _ContentElement:
     name: str
-    section: Optional[str]
+    section: str | None
     dom_id: str
-    tags: Tuple[str]
+    tags: tuple[str]
     html: str
 
 
-def _check_tags(tags) -> Tuple[str]:
+def _check_tags(tags) -> tuple[str]:
     # Must be iterable, but not a string
     if isinstance(tags, str):
         tags = (tags,)
@@ -391,7 +391,7 @@ def _fig_to_img(fig, *, image_format="png", own_figure=True):
         if fig.__class__.__name__ in ("MNEQtBrowser", "PyQtGraphBrowser"):
             img = _mne_qt_browser_screenshot(fig, return_type="ndarray")
         elif isinstance(fig, Figure3D):
-            from ..viz.backends.renderer import backend, MNE_3D_BACKEND_TESTING
+            from ..viz.backends.renderer import MNE_3D_BACKEND_TESTING, backend
 
             backend._check_3d_figure(figure=fig)
             if not MNE_3D_BACKEND_TESTING:
@@ -415,34 +415,27 @@ def _fig_to_img(fig, *, image_format="png", own_figure=True):
     dpi = fig.get_dpi()
     logger.debug(
         f"Saving figure with dimension {fig.get_size_inches()} inches with "
-        f"{{dpi}} dpi"
+        f"{dpi} dpi"
     )
 
     # https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html
     mpl_kwargs = dict()
     pil_kwargs = dict()
-    has_pillow = check_version("PIL")
-    if has_pillow:
-        if image_format == "webp":
-            pil_kwargs.update(lossless=True, method=6)
-        elif image_format == "png":
-            pil_kwargs.update(optimize=True, compress_level=9)
+    if image_format == "webp":
+        pil_kwargs.update(lossless=True, method=6)
+    elif image_format == "png":
+        pil_kwargs.update(optimize=True, compress_level=9)
     if pil_kwargs:
         # matplotlib modifies the passed dict, which is a bug
         mpl_kwargs["pil_kwargs"] = pil_kwargs.copy()
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            action="ignore",
-            message=".*Axes that are not compatible with tight_layout.*",
-            category=UserWarning,
-        )
-        fig.savefig(output, format=image_format, dpi=dpi, **mpl_kwargs)
+
+    fig.savefig(output, format=image_format, dpi=dpi, **mpl_kwargs)
 
     if own_figure:
         plt.close(fig)
 
     # Remove alpha
-    if image_format != "svg" and has_pillow:
+    if image_format != "svg":
         from PIL import Image
 
         output.seek(0)
@@ -459,36 +452,6 @@ def _fig_to_img(fig, *, image_format="png", own_figure=True):
         if image_format == "svg"
         else base64.b64encode(output).decode("ascii")
     )
-
-
-def _scale_mpl_figure(fig, scale):
-    """Magic scaling helper.
-
-    Keeps font size and artist sizes constant
-    0.5 : current font - 4pt
-    2.0 : current font + 4pt
-
-    This is a heuristic but it seems to work for most cases.
-    """
-    scale = float(scale)
-    fig.set_size_inches(fig.get_size_inches() * scale)
-    fig.set_dpi(fig.get_dpi() * scale)
-    import matplotlib as mpl
-
-    if scale >= 1:
-        sfactor = scale**2
-    else:
-        sfactor = -((1.0 / scale) ** 2)
-    for text in fig.findobj(mpl.text.Text):
-        fs = text.get_fontsize()
-        new_size = fs + sfactor
-        if new_size <= 0:
-            raise ValueError(
-                "could not rescale matplotlib fonts, consider " 'increasing "scale"'
-            )
-        text.set_fontsize(new_size)
-
-    fig.canvas.draw()
 
 
 def _get_bem_contour_figs_as_arrays(
@@ -593,9 +556,6 @@ def _plot_ica_properties_as_arrays(*, ica, inst, picks, n_jobs):
     """
     import matplotlib.pyplot as plt
 
-    if picks is None:
-        picks = list(range(ica.n_components_))
-
     def _plot_one_ica_property(*, ica, inst, pick):
         figs = ica.plot_properties(inst=inst, picks=pick, show=False)
         assert len(figs) == 1
@@ -672,11 +632,11 @@ def open_report(fname, **params):
         state = read_hdf5(fname, title="mnepython")
         for param in params.keys():
             if param not in state:
-                raise ValueError("The loaded report has no attribute %s" % param)
+                raise ValueError(f"The loaded report has no attribute {param}")
             if params[param] != state[param]:
                 raise ValueError(
-                    "Attribute '%s' of loaded report does not "
-                    "match the given parameter." % param
+                    f"Attribute '{param}' of loaded report does not "
+                    "match the given parameter."
                 )
         report = Report()
         report.__setstate__(state)
@@ -697,34 +657,16 @@ mne_logo = base64.b64encode(mne_logo_path.read_bytes()).decode("ascii")
 _ALLOWED_IMAGE_FORMATS = ("png", "svg", "webp")
 
 
-def _webp_supported():
-    good = check_version("matplotlib", "3.6") and check_version("PIL")
-    if good:
-        from PIL import features
-
-        good = features.check("webp")
-    return good
-
-
-def _check_scale(scale):
-    """Ensure valid scale value is passed."""
-    if np.isscalar(scale) and scale <= 0:
-        raise ValueError("scale must be positive, not %s" % scale)
-
-
 def _check_image_format(rep, image_format):
     """Ensure fmt is valid."""
     if rep is None or image_format is not None:
         allowed = list(_ALLOWED_IMAGE_FORMATS) + ["auto"]
         extra = ""
-        if not _webp_supported():
-            allowed.pop(allowed.index("webp"))
-            extra = '("webp" supported on matplotlib 3.6+ with PIL installed)'
         _check_option("image_format", image_format, allowed_values=allowed, extra=extra)
     else:
         image_format = rep.image_format
     if image_format == "auto":
-        image_format = "webp" if _webp_supported() else "png"
+        image_format = "webp"
     return image_format
 
 
@@ -750,7 +692,6 @@ class Report:
         ``'webp'`` if available and ``'png'`` otherwise).
         ``'svg'`` uses vector graphics, so fidelity is higher but can increase
         file size and browser image rendering time as well.
-        ``'webp'`` format requires matplotlib >= 3.6.
 
         .. versionadded:: 0.15
         .. versionchanged:: 1.3
@@ -854,7 +795,7 @@ class Report:
         self.include = []
         self.lang = "en-us"  # language setting for the HTML file
         if not isinstance(raw_psd, bool) and not isinstance(raw_psd, dict):
-            raise TypeError("raw_psd must be bool or dict, got %s" % (type(raw_psd),))
+            raise TypeError(f"raw_psd must be bool or dict, got {type(raw_psd)}")
         self.raw_psd = raw_psd
         self._init_render()  # Initialize the renderer
 
@@ -973,6 +914,64 @@ class Report:
             )
         return items, captions, comments
 
+    def copy(self):
+        """Return a deepcopy of the report.
+
+        Returns
+        -------
+        report : instance of Report
+            The copied report.
+        """
+        return copy.deepcopy(self)
+
+    def get_contents(self):
+        """Get the content of the report.
+
+        Returns
+        -------
+        titles : list of str
+            The title of each content element.
+        tags : list of list of str
+            The tags for each content element, one list per element.
+        htmls : list of str
+            The HTML contents for each element.
+
+        Notes
+        -----
+        .. versionadded:: 1.7
+        """
+        htmls, _, titles, tags = self._content_as_html()
+        return titles, tags, htmls
+
+    def reorder(self, order):
+        """Reorder the report content.
+
+        Parameters
+        ----------
+        order : array-like of int
+            The indices of the new order (as if you were reordering an array).
+            For example if there are 4 elements in the report,
+            ``order=[3, 0, 1, 2]`` would take the last element and move it to
+            the front. In other words, ``elements = [elements[ii] for ii in order]]``.
+
+        Notes
+        -----
+        .. versionadded:: 1.7
+        """
+        _validate_type(order, "array-like", "order")
+        order = np.array(order)
+        if order.dtype.kind != "i" or order.ndim != 1:
+            raise ValueError(
+                "order must be an array of integers, got "
+                f"{order.ndim}D array of dtype {order.dtype}"
+            )
+        n_elements = len(self._content)
+        if not np.array_equal(np.sort(order), np.arange(n_elements)):
+            raise ValueError(
+                f"order must be a permutation of range({n_elements}), got:\n{order}"
+            )
+        self._content = [self._content[ii] for ii in order]
+
     def _content_as_html(self):
         """Generate HTML representations based on the added content & sections.
 
@@ -1013,7 +1012,7 @@ class Report:
                 ]
                 section_htmls = [el.html for el in section_elements]
                 section_tags = tuple(
-                    sorted((set([t for el in section_elements for t in el.tags])))
+                    sorted(set([t for el in section_elements for t in el.tags]))
                 )
                 section_dom_id = self._get_dom_id(
                     section=None,  # root level of document
@@ -1047,18 +1046,12 @@ class Report:
     @property
     def html(self):
         """A list of HTML representations for all content elements."""
-        htmls, _, _, _ = self._content_as_html()
-        return htmls
+        return self._content_as_html()[0]
 
     @property
     def tags(self):
-        """All tags currently used in the report."""
-        tags = []
-        for c in self._content:
-            tags.extend(c.tags)
-
-        tags = tuple(sorted(set(tags)))
-        return tags
+        """A sorted tuple of all tags currently used in the report."""
+        return tuple(sorted(set(sum(self._content_as_html()[3], ()))))
 
     def add_custom_css(self, css):
         """Add custom CSS to the report.
@@ -1100,6 +1093,7 @@ class Report:
         *,
         psd=True,
         projs=None,
+        image_kwargs=None,
         topomap_kwargs=None,
         drop_log_ignore=("IGNORED",),
         tags=("epochs",),
@@ -1128,6 +1122,18 @@ class Report:
             If ``True``, add PSD plots based on all ``epochs``. If ``False``,
             do not add PSD plots.
         %(projs_report)s
+        image_kwargs : dict | None
+            Keyword arguments to pass to the "epochs image"-generating
+            function (:meth:`mne.Epochs.plot_image`).
+            Keys are channel types, values are dicts containing kwargs to pass.
+            For example, to use the rejection limits per channel type you could pass::
+
+                image_kwargs=dict(
+                    grad=dict(vmin=-reject['grad'], vmax=-reject['grad']),
+                    mag=dict(vmin=-reject['mag'], vmax=reject['mag']),
+                )
+
+            .. versionadded:: 1.7
         %(topomap_kwargs)s
         drop_log_ignore : array-like of str
             The drop reasons to ignore when creating the drop log bar plot.
@@ -1138,7 +1144,7 @@ class Report:
 
         Notes
         -----
-        .. versionadded:: 0.24.0
+        .. versionadded:: 0.24
         """
         tags = _check_tags(tags)
         add_projs = self.projs if projs is None else projs
@@ -1146,6 +1152,7 @@ class Report:
             epochs=epochs,
             psd=psd,
             add_projs=add_projs,
+            image_kwargs=image_kwargs,
             topomap_kwargs=topomap_kwargs,
             drop_log_ignore=drop_log_ignore,
             section=title,
@@ -1558,6 +1565,7 @@ class Report:
         event_id=None,
         sfreq,
         first_samp=0,
+        color=None,
         tags=("events",),
         replace=False,
     ):
@@ -1576,6 +1584,11 @@ class Report:
         first_samp : int
             The first sample point in the recording. This corresponds to
             ``raw.first_samp`` on files created with Elekta/Neuromag systems.
+        color : dict | None
+            Dictionary of event_id integers as keys and colors as values. This
+            parameter is directly passed to :func:`mne.viz.plot_events`.
+
+            .. versionadded:: 1.8.0
         %(tags_report)s
         %(replace_report)s
 
@@ -1589,6 +1602,7 @@ class Report:
             event_id=event_id,
             sfreq=sfreq,
             first_samp=first_samp,
+            color=color,
             title=title,
             section=None,
             image_format=self.image_format,
@@ -1648,7 +1662,6 @@ class Report:
 
         fig = ica.plot_overlay(inst=inst_, show=False, on_baseline="reapply")
         del inst_
-        tight_layout(fig=fig)
         _constrain_fig_resolution(fig, max_width=MAX_IMG_WIDTH, max_res=MAX_IMG_RES)
         self._add_figure(
             fig=fig,
@@ -1673,27 +1686,17 @@ class Report:
             )
             return
 
+        if picks is None:
+            picks = list(range(ica.n_components_))
+
         figs = _plot_ica_properties_as_arrays(
             ica=ica, inst=inst, picks=picks, n_jobs=n_jobs
         )
-        rel_explained_var = (
-            ica.pca_explained_variance_ / ica.pca_explained_variance_.sum()
-        )
-        cum_explained_var = np.cumsum(rel_explained_var)
-        captions = []
-        for idx, rel_var, cum_var in zip(
-            range(len(figs)),
-            rel_explained_var[: len(figs)],
-            cum_explained_var[: len(figs)],
-        ):
-            caption = (
-                f"ICA component {idx}. " f"Variance explained: {round(100 * rel_var)}%"
-            )
-            if idx == 0:
-                caption += "."
-            else:
-                caption += f" ({round(100 * cum_var)}% cumulative)."
+        assert len(figs) == len(picks)
 
+        captions = []
+        for idx in range(len(figs)):
+            caption = f"ICA component {picks[idx]}."
             captions.append(caption)
 
         title = "ICA component properties"
@@ -1743,7 +1746,10 @@ class Report:
     def _add_ica_artifact_scores(
         self, *, ica, scores, artifact_type, image_format, section, tags, replace
     ):
-        fig = ica.plot_scores(scores=scores, title=None, show=False)
+        assert artifact_type in ("EOG", "ECG")
+        fig = ica.plot_scores(
+            scores=scores, title=None, labels=artifact_type.lower(), show=False
+        )
         _constrain_fig_resolution(fig, max_width=MAX_IMG_WIDTH, max_res=MAX_IMG_RES)
         self._add_figure(
             fig=fig,
@@ -1769,9 +1775,6 @@ class Report:
         figs = ica.plot_components(picks=picks, title="", colorbar=True, show=False)
         if not isinstance(figs, list):
             figs = [figs]
-
-        for fig in figs:
-            tight_layout(fig=fig)
 
         title = "ICA component topographies"
         if len(figs) == 1:
@@ -2293,7 +2296,7 @@ class Report:
         elif caption is None and len(figs) == 1:
             captions = [None]
         elif caption is None and len(figs) > 1:
-            captions = [f"Figure {i+1}" for i in range(len(figs))]
+            captions = [f"Figure {i + 1}" for i in range(len(figs))]
         else:
             captions = tuple(caption)
 
@@ -2405,7 +2408,7 @@ class Report:
         )
         self._add_or_replace(
             title=title,
-            section=None,
+            section=section,
             tags=tags,
             html_partial=html_partial,
             replace=replace,
@@ -2574,9 +2577,7 @@ class Report:
                     f"</script>"
                 )
             elif inc_fname.endswith(".css"):
-                include.append(
-                    f'<style type="text/css">\n' f"{file_content}\n" f"</style>"
-                )
+                include.append(f'<style type="text/css">\n{file_content}\n</style>')
         self.include = "".join(include)
 
     def _iterate_files(
@@ -2828,15 +2829,11 @@ class Report:
         else:
             # only warn if relevant
             if any(_endswith(fname, "cov") for fname in fnames):
-                warn("`info_fname` not provided. Cannot render " "-cov.fif(.gz) files.")
+                warn("`info_fname` not provided. Cannot render -cov.fif(.gz) files.")
             if any(_endswith(fname, "trans") for fname in fnames):
-                warn(
-                    "`info_fname` not provided. Cannot render " "-trans.fif(.gz) files."
-                )
+                warn("`info_fname` not provided. Cannot render -trans.fif(.gz) files.")
             if any(_endswith(fname, "proj") for fname in fnames):
-                warn(
-                    "`info_fname` not provided. Cannot render " "-proj.fif(.gz) files."
-                )
+                warn("`info_fname` not provided. Cannot render -proj.fif(.gz) files.")
             info, sfreq = None, None
 
         cov = None
@@ -2845,7 +2842,7 @@ class Report:
 
         # render plots in parallel; check that n_jobs <= # of files
         logger.info(
-            f"Iterating over {len(fnames)} potential files " f"(this may take some "
+            f"Iterating over {len(fnames)} potential files (this may take some "
         )
         parallel, p_fun, n_jobs = parallel_func(
             self._iterate_files, n_jobs, max_jobs=len(fnames)
@@ -2883,7 +2880,7 @@ class Report:
                 )
 
         if sort_content:
-            self._content = self._sort(content=self._content, order=CONTENT_ORDER)
+            self._sort(order=CONTENT_ORDER)
 
     def __getstate__(self):
         """Get the state of the report as a dictionary."""
@@ -2955,19 +2952,17 @@ class Report:
         if fname is None:
             if self.data_path is None:
                 self.data_path = os.getcwd()
-                warn(f"`data_path` not provided. Using {self.data_path} " f"instead")
+                warn(f"`data_path` not provided. Using {self.data_path} instead")
             fname = op.join(self.data_path, "report.html")
 
         fname = str(_check_fname(fname, overwrite=overwrite, name=fname))
         fname = op.realpath(fname)  # resolve symlinks
 
         if sort_content:
-            self._content = self._sort(content=self._content, order=CONTENT_ORDER)
+            self._sort(order=CONTENT_ORDER)
 
         if not overwrite and op.isfile(fname):
-            msg = (
-                f"Report already exists at location {fname}. " f"Overwrite it (y/[n])? "
-            )
+            msg = f"Report already exists at location {fname}. Overwrite it (y/[n])? "
             answer = _safe_input(msg, alt="pass overwrite=True")
             if answer.lower() == "y":
                 overwrite = True
@@ -3020,35 +3015,28 @@ class Report:
         """Do nothing when entering the context block."""
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, exception_type, value, traceback):
         """Save the report when leaving the context block."""
         if self.fname is not None:
             self.save(self.fname, open_browser=False, overwrite=True)
 
-    @staticmethod
-    def _sort(content, order):
+    def _sort(self, *, order):
         """Reorder content to reflect "natural" ordering."""
-        content_unsorted = content.copy()
-        content_sorted = []
         content_sorted_idx = []
-        del content
 
         # First arrange content with known tags in the predefined order
         for tag in order:
-            for idx, content in enumerate(content_unsorted):
+            for idx, content in enumerate(self._content):
                 if tag in content.tags:
                     content_sorted_idx.append(idx)
-                    content_sorted.append(content)
 
         # Now simply append the rest (custom tags)
-        content_remaining = [
-            content
-            for idx, content in enumerate(content_unsorted)
-            if idx not in content_sorted_idx
-        ]
-
-        content_sorted = [*content_sorted, *content_remaining]
-        return content_sorted
+        self.reorder(
+            np.r_[
+                content_sorted_idx,
+                np.setdiff1d(np.arange(len(self._content)), content_sorted_idx),
+            ]
+        )
 
     def _render_one_bem_axis(
         self,
@@ -3165,7 +3153,7 @@ class Report:
 
         del orig_annotations
 
-        captions = [f"Segment {i+1} of {len(images)}" for i in range(len(images))]
+        captions = [f"Segment {i + 1} of {len(images)}" for i in range(len(images))]
 
         self._add_slider(
             figs=None,
@@ -3240,8 +3228,9 @@ class Report:
             init_kwargs, plot_kwargs = _split_psd_kwargs(kwargs=add_psd)
             init_kwargs.setdefault("fmax", fmax)
             plot_kwargs.setdefault("show", False)
-            fig = raw.compute_psd(**init_kwargs).plot(**plot_kwargs)
-            tight_layout(fig=fig)
+            with warnings.catch_warnings():
+                warnings.simplefilter(action="ignore", category=FutureWarning)
+                fig = raw.compute_psd(**init_kwargs).plot(**plot_kwargs)
             _constrain_fig_resolution(fig, max_width=MAX_IMG_WIDTH, max_res=MAX_IMG_RES)
             self._add_figure(
                 fig=fig,
@@ -3323,7 +3312,6 @@ class Report:
         # hard to see how (6, 4) could work in all number-of-projs by
         # number-of-channel-types conditions...
         fig.set_size_inches((6, 4))
-        tight_layout(fig=fig)
         _constrain_fig_resolution(fig, max_width=MAX_IMG_WIDTH, max_res=MAX_IMG_RES)
         self._add_figure(
             fig=fig,
@@ -3488,6 +3476,7 @@ class Report:
             len(ch_types) * 2,
             gridspec_kw={"width_ratios": [8, 0.5] * len(ch_types)},
             figsize=(2.5 * len(ch_types), 2),
+            layout="constrained",
         )
         _constrain_fig_resolution(fig, max_width=MAX_IMG_WIDTH, max_res=MAX_IMG_RES)
         ch_type_ax_map = dict(
@@ -3507,8 +3496,6 @@ class Report:
                 **topomap_kwargs,
             )
             ch_type_ax_map[ch_type][0].set_title(ch_type)
-
-        tight_layout(fig=fig)
 
         with BytesIO() as buff:
             fig.savefig(buff, format="png", pad_inches=0)
@@ -3561,7 +3548,9 @@ class Report:
                 continue
 
             vmax[ch_type] = (
-                np.abs(evoked.copy().pick(ch_type, verbose=False).data).max()
+                np.abs(
+                    evoked.copy().pick(ch_type, exclude="bads", verbose=False).data
+                ).max()
             ) * scalings[ch_type]
             if ch_type == "grad":
                 vmin[ch_type] = 0
@@ -3616,7 +3605,7 @@ class Report:
 
         import matplotlib.pyplot as plt
 
-        fig, ax = plt.subplots(len(ch_types), 1, sharex=True)
+        fig, ax = plt.subplots(len(ch_types), 1, sharex=True, layout="constrained")
         if len(ch_types) == 1:
             ax = [ax]
         for idx, ch_type in enumerate(ch_types):
@@ -3636,7 +3625,6 @@ class Report:
             if idx < len(ch_types) - 1:
                 ax[idx].set_xlabel(None)
 
-        tight_layout(fig=fig)
         _constrain_fig_resolution(fig, max_width=MAX_IMG_WIDTH, max_res=MAX_IMG_RES)
         title = "Global field power"
         self._add_figure(
@@ -3655,7 +3643,6 @@ class Report:
     ):
         """Render whitened evoked."""
         fig = evoked.plot_white(noise_cov=noise_cov, show=False)
-        tight_layout(fig=fig)
         _constrain_fig_resolution(fig, max_width=MAX_IMG_WIDTH, max_res=MAX_IMG_RES)
         title = "Whitened"
 
@@ -3684,6 +3671,17 @@ class Report:
         n_jobs,
         replace,
     ):
+        # Summary table
+        self._add_html_repr(
+            inst=evoked,
+            title="Info",
+            tags=tags,
+            section=section,
+            replace=replace,
+            div_klass="evoked",
+        )
+
+        # Joint plot
         ch_types = _get_data_ch_types(evoked)
         self._add_evoked_joint(
             evoked=evoked,
@@ -3694,6 +3692,8 @@ class Report:
             topomap_kwargs=topomap_kwargs,
             replace=replace,
         )
+
+        # Topomaps
         self._add_evoked_topomap_slider(
             evoked=evoked,
             ch_types=ch_types,
@@ -3705,6 +3705,8 @@ class Report:
             n_jobs=n_jobs,
             replace=replace,
         )
+
+        # GFP
         self._add_evoked_gfp(
             evoked=evoked,
             ch_types=ch_types,
@@ -3714,6 +3716,7 @@ class Report:
             replace=replace,
         )
 
+        # Whitened evoked
         if noise_cov is not None:
             self._add_evoked_whitened(
                 evoked=evoked,
@@ -3744,6 +3747,7 @@ class Report:
         *,
         events,
         event_id,
+        color,
         sfreq,
         first_samp,
         title,
@@ -3761,6 +3765,7 @@ class Report:
             event_id=event_id,
             sfreq=sfreq,
             first_samp=first_samp,
+            color=color,
             show=False,
         )
         _constrain_fig_resolution(fig, max_width=MAX_IMG_WIDTH, max_res=MAX_IMG_RES)
@@ -3812,11 +3817,11 @@ class Report:
             if fmax > 0.5 * epochs.info["sfreq"]:
                 fmax = np.inf
 
-        fig = epochs_for_psd.compute_psd(fmax=fmax).plot(show=False)
+        fig = epochs_for_psd.compute_psd(fmax=fmax).plot(amplitude=False, show=False)
         _constrain_fig_resolution(fig, max_width=MAX_IMG_WIDTH, max_res=MAX_IMG_RES)
         duration = round(epoch_duration * len(epochs_for_psd), 1)
         caption = (
-            f"PSD calculated from {len(epochs_for_psd)} epochs " f"({duration:.1f} s)."
+            f"PSD calculated from {len(epochs_for_psd)} epochs ({duration:.1f} s)."
         )
         self._add_figure(
             fig=fig,
@@ -3853,63 +3858,9 @@ class Report:
             metadata.index.name = "Epoch #"
 
         assert metadata.index.is_unique
-        index_name = metadata.index.name  # store for later use
+        data_id = metadata.index.name  # store for later use
         metadata = metadata.reset_index()  # We want "proper" columns only
-        html = metadata.to_html(
-            border=0,
-            index=False,
-            show_dimensions=True,
-            justify="unset",
-            float_format=lambda x: f"{round(x, 3):.3f}",
-            classes="table table-hover table-striped "
-            "table-sm table-responsive small",
-        )
-        del metadata
-
-        # Massage the table such that it woks nicely with bootstrap-table
-        htmls = html.split("\n")
-        header_pattern = "<th>(.*)</th>"
-
-        for idx, html in enumerate(htmls):
-            if "<table" in html:
-                htmls[idx] = html.replace(
-                    "<table",
-                    "<table "
-                    'id="mytable" '
-                    'data-toggle="table" '
-                    f'data-unique-id="{index_name}" '
-                    'data-search="true" '  # search / filter
-                    'data-search-highlight="true" '
-                    'data-show-columns="true" '  # show/hide columns
-                    'data-show-toggle="true" '  # allow card view
-                    'data-show-columns-toggle-all="true" '
-                    'data-click-to-select="true" '
-                    'data-show-copy-rows="true" '
-                    'data-show-export="true" '  # export to a file
-                    'data-export-types="[csv]" '
-                    'data-export-options=\'{"fileName": "metadata"}\' '
-                    'data-icon-size="sm" '
-                    'data-height="400"',
-                )
-                continue
-            elif "<tr" in html:
-                # Add checkbox for row selection
-                htmls[idx] = (
-                    f"{html}\n" f'<th data-field="state" data-checkbox="true"></th>'
-                )
-                continue
-
-            col_headers = re.findall(pattern=header_pattern, string=html)
-            if col_headers:
-                # Make columns sortable
-                assert len(col_headers) == 1
-                col_header = col_headers[0]
-                htmls[idx] = html.replace(
-                    "<th>",
-                    f'<th data-field="{col_header.lower()}" ' f'data-sortable="true">',
-                )
-
-        html = "\n".join(htmls)
+        html = _df_bootstrap_table(df=metadata, data_id=data_id)
         self._add_html_element(
             div_klass="epochs",
             tags=tags,
@@ -3925,6 +3876,7 @@ class Report:
         epochs,
         psd,
         add_projs,
+        image_kwargs,
         topomap_kwargs,
         drop_log_ignore,
         image_format,
@@ -3959,9 +3911,17 @@ class Report:
         ch_types = _get_data_ch_types(epochs)
         epochs.load_data()
 
+        _validate_type(image_kwargs, (dict, None), "image_kwargs")
+        # ensure dict with shallow copy because we will modify it
+        image_kwargs = dict() if image_kwargs is None else image_kwargs.copy()
+
         for ch_type in ch_types:
             with use_log_level(_verbose_safe_false(level="error")):
-                figs = epochs.copy().pick(ch_type, verbose=False).plot_image(show=False)
+                figs = (
+                    epochs.copy()
+                    .pick(ch_type, verbose=False)
+                    .plot_image(show=False, **image_kwargs.pop(ch_type, dict()))
+                )
 
             assert len(figs) == 1
             fig = figs[0]
@@ -3972,7 +3932,7 @@ class Report:
                 assert "eeg" in ch_type
                 title_start = "ERP image"
 
-            title = f"{title_start} " f'({_handle_default("titles")[ch_type]})'
+            title = f'{title_start} ({_handle_default("titles")[ch_type]})'
 
             self._add_figure(
                 fig=fig,
@@ -3983,6 +3943,12 @@ class Report:
                 section=section,
                 replace=replace,
                 own_figure=True,
+            )
+        if image_kwargs:
+            raise ValueError(
+                f"Ensure the keys in image_kwargs map onto channel types plotted in "
+                f"epochs.plot_image() of {ch_types}, could not use: "
+                f"{list(image_kwargs)}"
             )
 
         # Drop log
@@ -4003,7 +3969,6 @@ class Report:
                 fig = epochs.plot_drop_log(
                     subject=self.subject, ignore=drop_log_ignore, show=False
                 )
-                tight_layout(fig=fig)
                 _constrain_fig_resolution(
                     fig, max_width=MAX_IMG_WIDTH, max_res=MAX_IMG_RES
                 )
@@ -4179,18 +4144,17 @@ class Report:
 
                 if backend_is_3d:
                     brain.set_time(t)
-                    fig, ax = plt.subplots(figsize=(4.5, 4.5))
+                    fig, ax = plt.subplots(figsize=(4.5, 4.5), layout="constrained")
                     ax.imshow(brain.screenshot(time_viewer=True, mode="rgb"))
                     ax.axis("off")
-                    tight_layout(fig=fig)
                     _constrain_fig_resolution(
                         fig, max_width=stc_plot_kwargs["size"][0], max_res=MAX_IMG_RES
                     )
                     figs.append(fig)
                     plt.close(fig)
                 else:
-                    fig_lh = plt.figure()
-                    fig_rh = plt.figure()
+                    fig_lh = plt.figure(layout="constrained")
+                    fig_rh = plt.figure(layout="constrained")
 
                     brain_lh = stc.plot(
                         views="lat",
@@ -4210,8 +4174,6 @@ class Report:
                         backend="matplotlib",
                         figure=fig_rh,
                     )
-                    tight_layout(fig=fig_lh)  # TODO is this necessary?
-                    tight_layout(fig=fig_rh)  # TODO is this necessary?
                     _constrain_fig_resolution(
                         fig_lh,
                         max_width=stc_plot_kwargs["size"][0],
@@ -4313,19 +4275,10 @@ class Report:
         )
 
 
-def _clean_tags(tags):
-    if isinstance(tags, str):
-        tags = (tags,)
-
-    # Replace any whitespace characters with dashes
-    tags_cleaned = tuple(re.sub(r"[\s*]", "-", tag) for tag in tags)
-    return tags_cleaned
-
-
 def _recursive_search(path, pattern):
     """Auxiliary function for recursive_search of the directory."""
     filtered_files = list()
-    for dirpath, dirnames, files in os.walk(path):
+    for dirpath, _, files in os.walk(path):
         for f in fnmatch.filter(files, pattern):
             # only the following file types are supported
             # this ensures equitable distribution of jobs
@@ -4343,11 +4296,10 @@ _SCRAPER_TEXT = """
 
     .. container:: row
 
-        .. rubric:: The `HTML document <{0}>`__ written by :meth:`mne.Report.save`:
-
         .. raw:: html
 
-            <iframe class="sg_report" sandbox="allow-scripts" src="{0}"></iframe>
+            <strong><a href="{0}">The generated HTML document.</a></strong>
+            <iframe class="sg_report" sandbox="allow-scripts allow-modals" src="{0}"></iframe>
 
 """  # noqa: E501
 # Adapted from fa-file-code
@@ -4360,10 +4312,6 @@ class _ReportScraper:
     Only works properly if conf.py is configured properly and the file
     is written to the same directory as the example script.
     """
-
-    def __init__(self):
-        self.app = None
-        self.files = dict()
 
     def __repr__(self):
         return "<ReportScraper>"
@@ -4383,22 +4331,76 @@ class _ReportScraper:
                 with open(img_fname, "w") as fid:
                     fid.write(_FA_FILE_CODE)
                 # copy HTML file
-                html_fname = op.basename(report.fname)
-                out_dir = op.join(
-                    self.app.builder.outdir,
-                    op.relpath(
-                        op.dirname(block_vars["target_file"]), self.app.builder.srcdir
-                    ),
+                html_fname = Path(report.fname).name
+                srcdir = Path(gallery_conf["src_dir"])
+                outdir = Path(gallery_conf["out_dir"])
+                out_dir = outdir / Path(block_vars["target_file"]).parent.relative_to(
+                    srcdir
                 )
                 os.makedirs(out_dir, exist_ok=True)
-                out_fname = op.join(out_dir, html_fname)
+                out_fname = out_dir / html_fname
+                copyfile(report.fname, out_fname)
                 assert op.isfile(report.fname)
-                self.files[report.fname] = out_fname
                 # embed links/iframe
                 data = _SCRAPER_TEXT.format(html_fname)
                 return data
         return ""
 
-    def copyfiles(self, *args, **kwargs):
-        for key, value in self.files.items():
-            copyfile(key, value)
+    def set_dirs(self, app):
+        # Inject something into sphinx_gallery_conf as this gets pickled properly
+        # during parallel example generation
+        app.config.sphinx_gallery_conf["out_dir"] = app.builder.outdir
+
+
+def _df_bootstrap_table(*, df, data_id):
+    html = df.to_html(
+        border=0,
+        index=False,
+        show_dimensions=True,
+        justify="unset",
+        float_format=lambda x: f"{x:.3f}",
+        classes="table table-hover table-striped table-sm table-responsive small",
+        na_rep="",
+    )
+    htmls = html.split("\n")
+    header_pattern = "<th>(.*)</th>"
+
+    for idx, html in enumerate(htmls):
+        if "<table" in html:
+            htmls[idx] = html.replace(
+                "<table",
+                "<table "
+                'id="mytable" '
+                'data-toggle="table" '
+                f'data-unique-id="{data_id}" '
+                'data-search="true" '  # search / filter
+                'data-search-highlight="true" '
+                'data-show-columns="true" '  # show/hide columns
+                'data-show-toggle="true" '  # allow card view
+                'data-show-columns-toggle-all="true" '
+                'data-click-to-select="true" '
+                'data-show-copy-rows="true" '
+                'data-show-export="true" '  # export to a file
+                'data-export-types="[csv]" '
+                'data-export-options=\'{"fileName": "metadata"}\' '
+                'data-icon-size="sm" '
+                'data-height="400"',
+            )
+            continue
+        elif "<tr" in html:
+            # Add checkbox for row selection
+            htmls[idx] = f'{html}\n<th data-field="state" data-checkbox="true"></th>'
+            continue
+
+        col_headers = re.findall(pattern=header_pattern, string=html)
+        if col_headers:
+            # Make columns sortable
+            assert len(col_headers) == 1
+            col_header = col_headers[0]
+            htmls[idx] = html.replace(
+                "<th>",
+                f'<th data-field="{col_header.lower()}" data-sortable="true">',
+            )
+
+    html = "\n".join(htmls)
+    return html

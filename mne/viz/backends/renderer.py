@@ -5,27 +5,28 @@
 #          Joan Massich <mailsik@gmail.com>
 #          Guillaume Favelier <guillaume.favelier@gmail.com>
 #
-# License: Simplified BSD
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-from contextlib import contextmanager
 import importlib
-from functools import partial
 import time
+from contextlib import contextmanager
+from functools import partial
 
 import numpy as np
 
-from ._utils import VALID_3D_BACKENDS
-from .._3d import _get_3d_option
-from ..utils import safe_event
 from ...utils import (
+    _auto_weakref,
+    _check_option,
+    _validate_type,
+    fill_doc,
+    get_config,
     logger,
     verbose,
-    get_config,
-    _check_option,
-    fill_doc,
-    _validate_type,
-    _auto_weakref,
 )
+from .._3d import _get_3d_option
+from ..utils import safe_event
+from ._utils import VALID_3D_BACKENDS
 
 MNE_3D_BACKEND = None
 MNE_3D_BACKEND_TESTING = False
@@ -43,7 +44,7 @@ def _reload_backend(backend_name):
     backend = importlib.import_module(
         name=_backend_name_map[backend_name], package="mne.viz.backends"
     )
-    logger.info("Using %s 3d backend.\n" % backend_name)
+    logger.info(f"Using {backend_name} 3d backend.")
 
 
 def _get_backend():
@@ -263,8 +264,6 @@ def set_3d_view(
     focalpoint=None,
     distance=None,
     roll=None,
-    *,
-    reset_camera=None,
 ):
     """Configure the view of the given scene.
 
@@ -277,8 +276,6 @@ def set_3d_view(
     %(focalpoint)s
     %(distance)s
     %(roll)s
-    reset_camera : bool
-       Deprecated, use ``distance="auto"`` instead.
     """
     backend._set_3d_view(
         figure=figure,
@@ -287,7 +284,6 @@ def set_3d_view(
         focalpoint=focalpoint,
         distance=distance,
         roll=roll,
-        reset_camera=reset_camera,
     )
 
 
@@ -395,13 +391,13 @@ class _TimeInteraction:
         current_time_func,
         times,
         init_playback_speed=0.01,
-        playback_speed_range=[0.01, 0.1],
+        playback_speed_range=(0.01, 0.1),
     ):
         from ..ui_events import (
+            PlaybackSpeed,
+            TimeChange,
             publish,
             subscribe,
-            TimeChange,
-            PlaybackSpeed,
         )
 
         self._fig = fig
@@ -409,7 +405,6 @@ class _TimeInteraction:
         self._times = times
         self._init_time = current_time_func()
         self._init_playback_speed = init_playback_speed
-        self._playback_speed_range = playback_speed_range
 
         if not hasattr(self, "_dock"):
             self._dock_initialize()
@@ -521,7 +516,7 @@ class _TimeInteraction:
 
     def _toggle_playback(self, value=None):
         """Toggle time playback."""
-        from ..ui_events import publish, TimeChange
+        from ..ui_events import TimeChange, publish
 
         if value is None:
             self._playback = not self._playback
@@ -538,7 +533,7 @@ class _TimeInteraction:
 
     def _reset_time(self):
         """Reset time and playback speed to initial values."""
-        from ..ui_events import publish, TimeChange, PlaybackSpeed
+        from ..ui_events import PlaybackSpeed, TimeChange, publish
 
         publish(self._fig, TimeChange(time=self._init_time))
         publish(self._fig, PlaybackSpeed(speed=self._init_playback_speed))
@@ -553,7 +548,7 @@ class _TimeInteraction:
                 raise
 
     def _advance(self):
-        from ..ui_events import publish, TimeChange
+        from ..ui_events import TimeChange, publish
 
         this_time = time.time()
         delta = this_time - self._last_tick

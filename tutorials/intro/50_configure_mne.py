@@ -11,9 +11,12 @@ your analysis preferences.
 We begin by importing the necessary Python modules:
 """
 
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 # %%
 
 import os
+
 import mne
 
 # %%

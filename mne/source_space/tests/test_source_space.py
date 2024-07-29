@@ -2,48 +2,50 @@
 #          Eric Larson <larson.eric.d@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 from pathlib import Path
 from shutil import copytree
 
-import pytest
 import numpy as np
+import pytest
 from numpy.testing import (
-    assert_array_equal,
     assert_allclose,
-    assert_equal,
+    assert_array_equal,
     assert_array_less,
+    assert_equal,
 )
-from mne.datasets import testing
+
 import mne
 from mne import (
-    read_source_spaces,
-    write_source_spaces,
-    setup_source_space,
-    setup_volume_source_space,
-    add_source_space_distances,
-    read_bem_surfaces,
-    morph_source_spaces,
     SourceEstimate,
-    make_sphere_model,
+    add_source_space_distances,
     compute_source_morph,
+    get_volume_labels_from_src,
+    make_sphere_model,
+    morph_source_spaces,
     pick_types,
     read_bem_solution,
+    read_bem_surfaces,
     read_freesurfer_lut,
+    read_source_spaces,
     read_trans,
-    get_volume_labels_from_src,
+    setup_source_space,
+    setup_volume_source_space,
+    write_source_spaces,
 )
-from mne.fixes import _get_img_fdata
-from mne.utils import run_subprocess, _record_warnings, requires_mne
-from mne.surface import _accumulate_normals, _triangle_neighbors
-from mne.source_estimate import _get_src_type
-from mne.source_space._source_space import _compare_source_spaces
-from mne.source_space import (
-    get_decimated_surfaces,
-    compute_distance_to_sensors,
-)
-from mne._fiff.pick import _picks_to_idx
 from mne._fiff.constants import FIFF
+from mne._fiff.pick import _picks_to_idx
+from mne.datasets import testing
+from mne.fixes import _get_img_fdata
+from mne.source_estimate import _get_src_type
+from mne.source_space import (
+    compute_distance_to_sensors,
+    get_decimated_surfaces,
+)
+from mne.source_space._source_space import _compare_source_spaces
+from mne.surface import _accumulate_normals, _triangle_neighbors
+from mne.utils import _record_warnings, requires_mne, run_subprocess
 
 data_path = testing.data_path(download=False)
 subjects_dir = data_path / "subjects"
@@ -64,7 +66,7 @@ fname_morph = subjects_dir / "sample" / "bem" / "sample-fsaverage-ico-5-src.fif"
 fname_src = data_path / "subjects" / "sample" / "bem" / "sample-oct-4-src.fif"
 fname_fwd = data_path / "MEG" / "sample" / "sample_audvis_trunc-meg-eeg-oct-4-fwd.fif"
 trans_fname = data_path / "MEG" / "sample" / "sample_audvis_trunc-trans.fif"
-base_dir = Path(__file__).parent.parent.parent / "io" / "tests" / "data"
+base_dir = Path(__file__).parents[2] / "io" / "tests" / "data"
 fname_small = base_dir / "small-src.fif.gz"
 fname_ave = base_dir / "test-ave.fif"
 rng = np.random.RandomState(0)
@@ -385,6 +387,7 @@ def test_other_volume_source_spaces(tmp_path):
     """Test setting up other volume source spaces."""
     # these are split off because they require the MNE tools, and
     # Travis doesn't seem to like them
+    pytest.importorskip("nibabel")
 
     # let's try the spherical one (no bem or surf supplied)
     temp_name = tmp_path / "temp-src.fif"
@@ -561,14 +564,13 @@ def test_setup_source_space(tmp_path):
 @pytest.mark.parametrize("spacing", [2, 7])
 def test_setup_source_space_spacing(tmp_path, spacing, monkeypatch):
     """Test setting up surface source spaces using a given spacing."""
+    pytest.importorskip("nibabel")
     copytree(subjects_dir / "sample", tmp_path / "sample")
     args = [] if spacing == 7 else ["--spacing", str(spacing)]
     monkeypatch.setenv("SUBJECTS_DIR", str(tmp_path))
     monkeypatch.setenv("SUBJECT", "sample")
     run_subprocess(["mne_setup_source_space"] + args)
-    src = read_source_spaces(
-        tmp_path / "sample" / "bem" / ("sample-%d-src.fif" % spacing)
-    )
+    src = read_source_spaces(tmp_path / "sample" / "bem" / f"sample-{spacing}-src.fif")
     # No need to pass subjects_dir here because we've setenv'ed it
     src_new = setup_source_space("sample", spacing=spacing, add_dist=False)
     _compare_source_spaces(src, src_new, mode="approx", nearest=True)
@@ -675,6 +677,7 @@ def test_source_space_from_label(tmp_path, pass_ids):
     _compare_source_spaces(src, src_from_file, mode="approx")
 
 
+@pytest.mark.slowtest
 @testing.requires_testing_data
 def test_source_space_exclusive_complete(src_volume_labels):
     """Test that we produce exclusive and complete labels."""
@@ -695,7 +698,10 @@ def test_source_space_exclusive_complete(src_volume_labels):
     for si, s in enumerate(src):
         assert_allclose(src_full[0]["rr"], s["rr"], atol=1e-6)
     # also check single_volume=True -- should be the same result
-    with pytest.warns(RuntimeWarning, match="Found no usable.*Left-vessel.*"):
+    with (
+        _record_warnings(),
+        pytest.warns(RuntimeWarning, match="Found no usable.*Left-vessel.*"),
+    ):
         src_single = setup_volume_source_space(
             src[0]["subject_his_id"],
             7.0,
@@ -866,6 +872,27 @@ def test_combine_source_spaces(tmp_path):
     with pytest.warns(RuntimeWarning, match="2 surf vertices lay outside"):
         src.export_volume(image_fname, mri_resolution="sparse", overwrite=True)
 
+    # gh-12495
+    image_fname = tmp_path / "temp-image.nii"
+    lh_cereb = mne.setup_volume_source_space(
+        "sample",
+        mri=aseg_fname,
+        volume_label="Left-Cerebellum-Cortex",
+        add_interpolator=False,
+        subjects_dir=subjects_dir,
+    )
+    lh_cereb.export_volume(image_fname, mri_resolution=True)
+    aseg = nib.load(str(aseg_fname))
+    out = nib.load(str(image_fname))
+    assert_allclose(out.affine, aseg.affine)
+    src_data = _get_img_fdata(out).astype(bool)
+    aseg_data = _get_img_fdata(aseg) == 8
+    n_src = src_data.sum()
+    n_aseg = aseg_data.sum()
+    assert n_aseg == n_src
+    n_overlap = (src_data & aseg_data).sum()
+    assert n_src == n_overlap
+
 
 @testing.requires_testing_data
 def test_morph_source_spaces():
@@ -1033,7 +1060,7 @@ data_path = mne.datasets.sample.data_path()
 src = mne.setup_source_space('sample', fname=None, spacing='oct5')
 hemis = ['lh', 'rh']
 fnames = [
-    str(data_path) + '/subjects/sample/surf/%s.decimated' % h for h in hemis]
+    str(data_path) + f'/subjects/sample/surf/{h}.decimated' for h in hemis]
 
 vs = list()
 for s, fname in zip(src, fnames):
@@ -1047,7 +1074,7 @@ for s, fname in zip(src, fnames):
 
 # we need to move sphere surfaces
 spheres = [
-    str(data_path) + '/subjects/sample/surf/%s.sphere' % h for h in hemis]
+    str(data_path) + f'/subjects/sample/surf/{h}.sphere' for h in hemis]
 for s in spheres:
     os.rename(s, s + '.bak')
 try:

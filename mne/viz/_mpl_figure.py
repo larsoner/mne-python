@@ -33,11 +33,11 @@ matplotlib.figure.Figure
 
 # Authors: Daniel McCloy <dan@mccloy.info>
 #
-# License: Simplified BSD
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import datetime
 import platform
-import warnings
 from collections import OrderedDict
 from contextlib import contextmanager
 from functools import partial
@@ -47,42 +47,33 @@ import numpy as np
 from matplotlib import get_backend
 from matplotlib.figure import Figure
 
-from ..fixes import _close_event
 from .._fiff.pick import (
     _DATA_CH_TYPES_ORDER_DEFAULT,
     _DATA_CH_TYPES_SPLIT,
-    _FNIRS_CH_TYPES_SPLIT,
     _EYETRACK_CH_TYPES_SPLIT,
+    _FNIRS_CH_TYPES_SPLIT,
     _VALID_CHANNEL_TYPES,
     channel_indices_by_type,
     pick_types,
 )
-from ..utils import Bunch, _click_ch_name, logger, check_version
+from ..fixes import _close_event
+from ..utils import Bunch, _click_ch_name, check_version, logger
 from ._figure import BrowserBase
 from .utils import (
     DraggableLine,
     _events_off,
     _fake_click,
     _fake_keypress,
+    _fake_scroll,
     _merge_annotations,
-    _prop_kw,
     _set_window_title,
     _validate_if_list_of_axes,
-    plt_show,
-    _fake_scroll,
     plot_sensors,
+    plt_show,
 )
 
 name = "matplotlib"
-with plt.ion():
-    BACKEND = get_backend()
-#   This      ↑↑↑↑↑↑↑↑↑↑↑↑↑ does weird things:
-#   https://github.com/matplotlib/matplotlib/issues/23298
-#   but wrapping it in ion() context makes it go away.
-#   Moving this bit to a separate function in ../../fixes.py doesn't work.
-#
-#   TODO: Once we require matplotlib 3.6 we should be able to remove this.
-#   It also causes some problems... see mne/viz/utils.py:plt_show() for details.
+BACKEND = get_backend()
 
 # CONSTANTS (inches)
 ANNOTATION_FIG_PAD = 0.1
@@ -118,7 +109,7 @@ class MNEFigure(Figure):
             for key in [k for k in kwargs if not hasattr(self.mne, k)]:
                 setattr(self.mne, key, kwargs[key])
 
-    def _close(self, event):
+    def _close(self, event=None):
         """Handle close events."""
         logger.debug(f"Closing {self!r}")
         # remove references from parent fig to child fig
@@ -239,13 +230,7 @@ class MNEAnnotationFigure(MNEFigure):
         selector = self.mne.parent_fig.mne.ax_main.selector
         # https://github.com/matplotlib/matplotlib/issues/20618
         # https://github.com/matplotlib/matplotlib/pull/20693
-        try:  # > 3.4.2
-            selector.set_props(color=color, facecolor=color)
-        except AttributeError:
-            with warnings.catch_warnings(record=True):
-                warnings.simplefilter("ignore", DeprecationWarning)
-                selector.rect.set_color(color)
-                selector.rectprops.update(dict(facecolor=color))
+        selector.set_props(color=color, facecolor=color)
         if draw:
             self.canvas.draw()
 
@@ -791,6 +776,7 @@ class MNEBrowseFigure(BrowserBase, MNEFigure):
     def _buttonpress(self, event):
         """Handle mouse clicks."""
         from matplotlib.collections import PolyCollection
+
         from ..annotations import _sync_onset
 
         butterfly = self.mne.butterfly
@@ -886,9 +872,15 @@ class MNEBrowseFigure(BrowserBase, MNEFigure):
         fig = super()._create_ch_context_fig(idx)
         plt_show(fig=fig)
 
-    def _new_child_figure(self, fig_name, **kwargs):
+    def _new_child_figure(self, fig_name, *, layout=None, **kwargs):
         """Instantiate a new MNE dialog figure (with event listeners)."""
-        fig = _figure(toolbar=False, parent_fig=self, fig_name=fig_name, **kwargs)
+        fig = _figure(
+            toolbar=False,
+            parent_fig=self,
+            fig_name=fig_name,
+            layout=layout,
+            **kwargs,
+        )
         fig._add_default_callbacks()
         self.mne.child_figs.append(fig)
         if isinstance(fig_name, str):
@@ -1108,7 +1100,7 @@ class MNEBrowseFigure(BrowserBase, MNEFigure):
         checkbox.on_clicked(self._toggle_draggable_annotations)
         fig.mne.drag_checkbox = checkbox
         # reposition & resize axes
-        width_in, height_in = fig.get_size_inches()
+        width_in, _ = fig.get_size_inches()
         width_ax = fig._inch_to_rel(
             width_in - ANNOTATION_FIG_CHECKBOX_COLUMN_W - 3 * ANNOTATION_FIG_PAD
         )
@@ -1133,7 +1125,6 @@ class MNEBrowseFigure(BrowserBase, MNEFigure):
         else:
             col = self.mne.annotation_segment_colors[self._get_annotation_labels()[0]]
 
-        rect_kw = _prop_kw("rect", dict(alpha=0.5, facecolor=col))
         selector = SpanSelector(
             self.mne.ax_main,
             self._select_annotation_span,
@@ -1141,7 +1132,7 @@ class MNEBrowseFigure(BrowserBase, MNEFigure):
             minspan=0.1,
             useblit=True,
             button=1,
-            **rect_kw,
+            props=dict(alpha=0.5, facecolor=col),
         )
         self.mne.ax_main.selector = selector
         self.mne._callback_ids["motion_notify_event"] = self.canvas.mpl_connect(
@@ -1787,9 +1778,17 @@ class MNEBrowseFigure(BrowserBase, MNEFigure):
 
     def _show_scalebars(self):
         """Add channel scale bars."""
-        for offset, pick in zip(self.mne.trace_offsets, self.mne.picks):
+        for pi, pick in enumerate(self.mne.picks):
             this_name = self.mne.ch_names[pick]
             this_type = self.mne.ch_types[pick]
+            # TODO: Simplify this someday -- we have to duplicate the challenging
+            # logic of _draw_traces here
+            offset_ixs = (
+                self.mne.picks
+                if self.mne.butterfly and self.mne.ch_selections is None
+                else slice(None)
+            )
+            offset = self.mne.trace_offsets[offset_ixs][pi]
             if (
                 this_type not in self.mne.scalebars
                 and this_type != "stim"
@@ -1839,7 +1838,7 @@ class MNEBrowseFigure(BrowserBase, MNEFigure):
         color = "#AA3377"  # purple
         kwargs = dict(color=color, zorder=self.mne.zorder["scalebar"])
         if ch_type == "time":
-            label = f"{self.mne.boundary_times[1]/2:.2f} s"
+            label = f"{self.mne.boundary_times[1] / 2:.2f} s"
             text = self.mne.ax_main.text(
                 x[0] + 0.015,
                 y[1] - 0.05,
@@ -2239,8 +2238,8 @@ class MNEBrowseFigure(BrowserBase, MNEFigure):
         self.mne.vline_visible = visible
         self.canvas.draw_idle()
 
-    # workaround: plt.close() doesn't spawn close_event on Agg backend
-    # (check MPL github issue #18609; scheduled to be fixed by MPL 3.6)
+    # workaround: plt.close() doesn't spawn close_event on Agg backend, this method
+    # can be removed once the _close_event in fixes.py is removed
     def _close_event(self, fig=None):
         """Force calling of the MPL figure close event."""
         fig = fig or self
@@ -2324,38 +2323,16 @@ class MNEBrowseFigure(BrowserBase, MNEFigure):
 class MNELineFigure(MNEFigure):
     """Interactive figure for non-scrolling line plots."""
 
-    def __init__(self, inst, n_axes, figsize, **kwargs):
-        super().__init__(figsize=figsize, inst=inst, **kwargs)
-
-        # AXES: default margins (inches)
-        l_margin = 0.8
-        r_margin = 0.2
-        b_margin = 0.65
-        t_margin = 0.35
-        # AXES: default margins (figure-relative coordinates)
-        left = self._inch_to_rel(l_margin)
-        right = 1 - self._inch_to_rel(r_margin)
-        bottom = self._inch_to_rel(b_margin, horiz=False)
-        top = 1 - self._inch_to_rel(t_margin, horiz=False)
-        # AXES: make subplots
-        axes = [self.add_subplot(n_axes, 1, 1)]
-        for ix in range(1, n_axes):
-            axes.append(self.add_subplot(n_axes, 1, ix + 1, sharex=axes[0]))
-        self.subplotpars.update(
-            left=left, bottom=bottom, top=top, right=right, hspace=0.4
+    def __init__(self, inst, n_axes, figsize, *, layout="constrained", **kwargs):
+        super().__init__(
+            figsize=figsize,
+            inst=inst,
+            layout=layout,
+            sharex=True,
+            **kwargs,
         )
-        # save useful things
-        self.mne.ax_list = axes
-
-    def _resize(self, event):
-        """Handle resize event."""
-        old_width, old_height = self.mne.fig_size_px
-        new_width, new_height = self._get_size_px()
-        new_margins = _calc_new_margins(
-            self, old_width, old_height, new_width, new_height
-        )
-        self.subplots_adjust(**new_margins)
-        self.mne.fig_size_px = (new_width, new_height)
+        for ix in range(n_axes):
+            self.add_subplot(n_axes, 1, ix + 1)
 
 
 def _close_all():
@@ -2372,6 +2349,8 @@ def _figure(toolbar=True, FigureClass=MNEFigure, **kwargs):
     from matplotlib import rc_context
 
     title = kwargs.pop("window_title", None)  # extract title before init
+    if "layout" not in kwargs:
+        kwargs["layout"] = "constrained"
     rc = dict() if toolbar else dict(toolbar="none")
     with rc_context(rc=rc):
         fig = plt.figure(FigureClass=FigureClass, **kwargs)
@@ -2379,6 +2358,11 @@ def _figure(toolbar=True, FigureClass=MNEFigure, **kwargs):
     fig.mne.backend = BACKEND
     if title is not None:
         _set_window_title(fig, title)
+    # TODO: for some reason for topomaps->_prepare_trellis the layout=constrained does
+    # not work the first time (maybe toolbar=False?)
+    if kwargs.get("layout") == "constrained":
+        fig.set_layout_engine("constrained")
+
     # add event callbacks
     fig._add_default_callbacks()
     return fig
@@ -2412,7 +2396,7 @@ def _line_figure(inst, axes=None, picks=None, **kwargs):
             **kwargs,
         )
         fig.mne.fig_size_px = fig._get_size_px()  # can't do in __init__
-        axes = fig.mne.ax_list
+        axes = fig.axes
     return fig, axes
 
 
@@ -2483,7 +2467,7 @@ def _init_browser(**kwargs):
     """Instantiate a new MNE browse-style figure."""
     from mne.io import BaseRaw
 
-    fig = _figure(toolbar=False, FigureClass=MNEBrowseFigure, **kwargs)
+    fig = _figure(toolbar=False, FigureClass=MNEBrowseFigure, layout=None, **kwargs)
 
     # splash is ignored (maybe we could do it for mpl if we get_backend() and
     # check if it's Qt... but seems overkill)
@@ -2492,7 +2476,7 @@ def _init_browser(**kwargs):
     # (can't do in __init__ due to get_position() calls)
     fig.canvas.draw()
     fig._update_zen_mode_offsets()
-    fig._resize(None)  # needed for MPL >=3.4
+    fig._resize(None)  # needed for MPL
 
     # if scrollbars are supposed to start hidden,
     # set to True and then toggle

@@ -1,9 +1,10 @@
 # Authors: Eric Larson <larson.eric.d@gmail.com>
 #
-# License: Simplified BSD
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-import pytest
 import numpy as np
+import pytest
 from numpy.testing import assert_array_equal
 
 from mne.stats import combine_adjacency

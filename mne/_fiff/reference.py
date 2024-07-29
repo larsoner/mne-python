@@ -3,53 +3,26 @@
 #          Teon Brooks <teon.brooks@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import numpy as np
 
+from ..defaults import DEFAULTS
+from ..utils import (
+    _check_option,
+    _check_preload,
+    _on_missing,
+    _validate_type,
+    fill_doc,
+    logger,
+    pinv,
+    verbose,
+    warn,
+)
 from .constants import FIFF
 from .meas_info import _check_ch_keys
-from .proj import _has_eeg_average_ref_proj, make_eeg_average_ref_proj
-from .proj import setup_proj
-from .pick import pick_types, pick_channels, pick_channels_forward, _ELECTRODE_CH_TYPES
-from ..fixes import pinv
-from ..utils import (
-    logger,
-    warn,
-    verbose,
-    _validate_type,
-    _check_preload,
-    _check_option,
-    fill_doc,
-    _on_missing,
-)
-from ..defaults import DEFAULTS
-
-
-def _copy_channel(inst, ch_name, new_ch_name):
-    """Add a copy of a channel specified by ch_name.
-
-    Input data can be in the form of Raw, Epochs or Evoked.
-
-    The instance object is modified inplace.
-
-    Parameters
-    ----------
-    inst : instance of Raw | Epochs | Evoked
-        Data containing the EEG channels
-    ch_name : str
-        Name of the channel to copy.
-    new_ch_name : str
-        Name given to the copy of the channel.
-
-    Returns
-    -------
-    inst : instance of Raw | Epochs | Evoked
-        The data with a copy of a given channel.
-    """
-    new_inst = inst.copy().pick([ch_name])
-    new_inst.rename_channels({ch_name: new_ch_name})
-    inst.add_channels([new_inst], force_update_info=True)
-    return inst
+from .pick import _ELECTRODE_CH_TYPES, pick_channels, pick_channels_forward, pick_types
+from .proj import _has_eeg_average_ref_proj, make_eeg_average_ref_proj, setup_proj
 
 
 def _check_before_reference(inst, ref_from, ref_to, ch_type):
@@ -67,7 +40,7 @@ def _check_before_reference(inst, ref_from, ref_to, ch_type):
     else:
         extra = "channels supplied"
     if len(ref_to) == 0:
-        raise ValueError("No %s to apply the reference to" % (extra,))
+        raise ValueError(f"No {extra} to apply the reference to")
 
     # After referencing, existing SSPs might not be valid anymore.
     projs_to_remove = []
@@ -77,7 +50,7 @@ def _check_before_reference(inst, ref_from, ref_to, ch_type):
             proj["desc"] == "Average EEG reference"
             or proj["kind"] == FIFF.FIFFV_PROJ_ITEM_EEG_AVREF
         ):
-            logger.info("Removing existing average EEG reference " "projection.")
+            logger.info("Removing existing average EEG reference projection.")
             # Don't remove the projection right away, but do this at the end of
             # this loop.
             projs_to_remove.append(i)
@@ -176,10 +149,18 @@ def add_reference_channels(inst, ref_channels, copy=True):
     -------
     inst : instance of Raw | Epochs | Evoked
         Data with added EEG reference channels.
+
+    Notes
+    -----
+    .. warning::
+        When :ref:`re-referencing <tut-set-eeg-ref>`,
+        make sure to apply the montage using :meth:`mne.io.Raw.set_montage`
+        only after calling this function. Applying a montage will only set
+        locations of channels that exist at the time it is applied.
     """
-    from ..io import BaseRaw
-    from ..evoked import Evoked
     from ..epochs import BaseEpochs
+    from ..evoked import Evoked
+    from ..io import BaseRaw
 
     # Check to see that data is preloaded
     _check_preload(inst, "add_reference_channels")
@@ -188,7 +169,7 @@ def add_reference_channels(inst, ref_channels, copy=True):
         ref_channels = [ref_channels]
     for ch in ref_channels:
         if ch in inst.info["ch_names"]:
-            raise ValueError("Channel %s already specified in inst." % ch)
+            raise ValueError(f"Channel {ch} already specified in inst.")
 
     # Once CAR is applied (active), don't allow adding channels
     if _has_eeg_average_ref_proj(inst.info, check_active=True):
@@ -211,7 +192,7 @@ def add_reference_channels(inst, ref_channels, copy=True):
         inst._data = data
     else:
         raise TypeError(
-            "inst should be Raw, Epochs, or Evoked instead of %s." % type(inst)
+            f"inst should be Raw, Epochs, or Evoked instead of {type(inst)}."
         )
     nchan = len(inst.info["ch_names"])
 
@@ -240,7 +221,9 @@ def add_reference_channels(inst, ref_channels, copy=True):
         ref_dig_array = np.full(12, np.nan)
         logger.info(
             "Location for this channel is unknown; consider calling "
-            "set_montage() again if needed."
+            "set_montage() after adding new reference channels if needed. "
+            "Applying a montage will only set locations of channels that "
+            "exist at the time it is applied."
         )
 
     for ch in ref_channels:
@@ -280,9 +263,9 @@ _ref_dict = {
 
 
 def _check_can_reref(inst):
-    from ..io import BaseRaw
-    from ..evoked import Evoked
     from ..epochs import BaseEpochs
+    from ..evoked import Evoked
+    from ..io import BaseRaw
 
     _validate_type(inst, (BaseRaw, BaseEpochs, Evoked), "Instance")
     current_custom = inst.info["custom_ref_applied"]
@@ -291,8 +274,8 @@ def _check_can_reref(inst):
         FIFF.FIFFV_MNE_CUSTOM_REF_OFF,
     ):
         raise RuntimeError(
-            "Cannot set new reference on data with custom "
-            "reference type %r" % (_ref_dict[current_custom],)
+            "Cannot set new reference on data with custom reference type "
+            f"{_ref_dict[current_custom]!r}"
         )
 
 
@@ -353,8 +336,8 @@ def set_eeg_reference(
     if projection:  # average reference projector
         if ref_channels != "average":
             raise ValueError(
-                "Setting projection=True is only supported for "
-                'ref_channels="average", got %r.' % (ref_channels,)
+                'Setting projection=True is only supported for ref_channels="average", '
+                f"got {ref_channels!r}."
             )
         # We need verbose='error' here in case we add projs sequentially
         if _has_eeg_average_ref_proj(inst.info, ch_type=ch_type, verbose="error"):
@@ -443,15 +426,13 @@ def _get_ch_type(inst, ch_type):
             if type_ in inst:
                 ch_type = [type_]
                 logger.info(
-                    "%s channel type selected for "
-                    "re-referencing" % DEFAULTS["titles"][type_]
+                    f"{DEFAULTS['titles'][type_]} channel type selected for "
+                    "re-referencing"
                 )
                 break
         # if auto comes up empty, or the user specifies a bad ch_type.
         else:
-            raise ValueError(
-                "No EEG, ECoG, sEEG or DBS channels found " "to rereference."
-            )
+            raise ValueError("No EEG, ECoG, sEEG or DBS channels found to rereference.")
     return ch_type
 
 
@@ -530,10 +511,10 @@ def set_bipolar_reference(
 
     .. versionadded:: 0.9.0
     """
-    from .meas_info import create_info
-    from ..io import BaseRaw, RawArray
     from ..epochs import BaseEpochs, EpochsArray
     from ..evoked import EvokedArray
+    from ..io import BaseRaw, RawArray
+    from .meas_info import create_info
 
     _check_can_reref(inst)
     if not isinstance(anode, list):
@@ -544,8 +525,8 @@ def set_bipolar_reference(
 
     if len(anode) != len(cathode):
         raise ValueError(
-            "Number of anodes (got %d) must equal the number "
-            "of cathodes (got %d)." % (len(anode), len(cathode))
+            f"Number of anodes (got {len(anode)}) must equal the number "
+            f"of cathodes (got {len(cathode)})."
         )
 
     if ch_name is None:
@@ -555,7 +536,7 @@ def set_bipolar_reference(
     if len(ch_name) != len(anode):
         raise ValueError(
             "Number of channel names must equal the number of "
-            "anodes/cathodes (got %d)." % len(ch_name)
+            f"anodes/cathodes (got {len(ch_name)})."
         )
 
     # Check for duplicate channel names (it is allowed to give the name of the
@@ -563,9 +544,9 @@ def set_bipolar_reference(
     for ch, a, c in zip(ch_name, anode, cathode):
         if ch not in [a, c] and ch in inst.ch_names:
             raise ValueError(
-                'There is already a channel named "%s", please '
+                f'There is already a channel named "{ch}", please '
                 "specify a different name for the bipolar "
-                "channel using the ch_name parameter." % ch
+                "channel using the ch_name parameter."
             )
 
     if ch_info is None:

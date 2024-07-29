@@ -1,3 +1,5 @@
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 r"""
 .. _tut-importing-fnirs-data:
 
@@ -159,6 +161,7 @@ have to adapt this depending on the system from which your CSV originated.
 
 import numpy as np
 import pandas as pd
+
 import mne
 
 # sphinx_gallery_thumbnail_number = 2

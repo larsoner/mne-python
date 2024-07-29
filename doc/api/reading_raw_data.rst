@@ -10,7 +10,7 @@ Reading raw data
    :no-inherited-members:
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    anonymize_info
    read_raw
@@ -40,11 +40,12 @@ Reading raw data
    read_raw_nihon
    read_raw_fil
    read_raw_nsx
+   read_raw_neuralynx
 
 Base class:
 
 .. autosummary::
-   :toctree: generated
+   :toctree: ../generated/
    :template: autosummary/class_no_members.rst
 
    BaseRaw
@@ -58,6 +59,6 @@ Base class:
    :no-inherited-members:
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    read_mrk

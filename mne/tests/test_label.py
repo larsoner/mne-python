@@ -1,6 +1,7 @@
 # Author: Eric Larson <larson.eric.d@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import glob
 import os
@@ -10,70 +11,66 @@ from itertools import product
 from pathlib import Path
 
 import numpy as np
-from scipy import sparse
-
-from numpy.testing import (
-    assert_array_equal,
-    assert_array_almost_equal,
-    assert_equal,
-    assert_allclose,
-    assert_array_less,
-)
 import pytest
+from numpy.testing import (
+    assert_allclose,
+    assert_array_almost_equal,
+    assert_array_equal,
+    assert_array_less,
+    assert_equal,
+)
 
-from mne.datasets import testing
 from mne import (
+    grow_labels,
+    labels_to_stc,
+    morph_labels,
+    random_parcellation,
     read_label,
-    stc_to_label,
+    read_labels_from_annot,
     read_source_estimate,
     read_source_spaces,
-    grow_labels,
-    read_labels_from_annot,
-    write_labels_to_annot,
-    split_label,
-    spatial_tris_adjacency,
     read_surface,
-    random_parcellation,
-    morph_labels,
-    labels_to_stc,
+    spatial_tris_adjacency,
+    split_label,
+    stc_to_label,
+    write_labels_to_annot,
 )
+from mne.datasets import testing
+from mne.fixes import _eye_array
 from mne.label import (
     Label,
     _blend_colors,
-    label_sign_flip,
     _load_vert_pos,
-    select_sources,
     _n_colors,
     _read_annot,
     _read_annot_cands,
+    label_sign_flip,
+    select_sources,
 )
-from mne.source_space import SourceSpaces
 from mne.source_estimate import mesh_edges
+from mne.source_space import SourceSpaces
 from mne.surface import _mesh_borders
-from mne.utils import get_subjects_dir, _record_warnings
-
+from mne.utils import _record_warnings, get_subjects_dir
 
 data_path = testing.data_path(download=False)
 subjects_dir = data_path / "subjects"
 src_fname = subjects_dir / "sample" / "bem" / "sample-oct-6-src.fif"
 stc_fname = data_path / "MEG" / "sample" / "sample_audvis_trunc-meg-lh.stc"
 real_label_fname = data_path / "MEG" / "sample" / "labels" / "Aud-lh.label"
-real_label_rh_fname = data_path / "MEG" / "sample" / "labels" / "Aud-rh.label"
 v1_label_fname = subjects_dir / "sample" / "label" / "lh.V1.label"
 
 fwd_fname = data_path / "MEG" / "sample" / "sample_audvis_trunc-meg-eeg-oct-6-fwd.fif"
 src_bad_fname = data_path / "subjects" / "fsaverage" / "bem" / "fsaverage-ico-5-src.fif"
 label_dir = subjects_dir / "sample" / "label" / "aparc"
 
-test_path = Path(__file__).parent.parent / "io" / "tests" / "data"
+test_path = Path(__file__).parents[1] / "io" / "tests" / "data"
 label_fname = test_path / "test-lh.label"
-label_rh_fname = test_path / "test-rh.label"
 
 # This code was used to generate the "fake" test labels:
 # for hemi in ['lh', 'rh']:
 #    label = Label(np.unique((np.random.rand(100) * 10242).astype(int)),
 #                  hemi=hemi, comment='Test ' + hemi, subject='fsaverage')
-#    label.save(op.join(test_path, 'test-%s.label' % hemi))
+#    label.save(op.join(test_path, f'test-{hemi}.label'))
 
 
 # XXX : this was added for backward compat and keep the old test_label_in_src
@@ -134,7 +131,7 @@ def _stc_to_label(stc, src, smooth, subjects_dir=None):
         e = mesh_edges(this_tris)
         e.data[e.data == 2] = 1
         n_vertices = e.shape[0]
-        e = e + sparse.eye(n_vertices, n_vertices)
+        e = e + _eye_array(n_vertices)
 
         clusters = [this_vertno[np.any(this_data, axis=1)]]
 
@@ -151,7 +148,7 @@ def _stc_to_label(stc, src, smooth, subjects_dir=None):
                 idx_use = c
                 for k in range(smooth):
                     e_use = e[:, idx_use]
-                    data1 = e_use * np.ones(len(idx_use))
+                    data1 = e_use @ np.ones(len(idx_use))
                     idx_use = np.where(data1)[0]
 
                 label = Label(
@@ -183,7 +180,7 @@ def assert_labels_equal(l0, l1, decimal=5, comment=True, color=True):
     for attr in ["hemi", "subject"]:
         attr0 = getattr(l0, attr)
         attr1 = getattr(l1, attr)
-        msg = "label.%s: %r != %r" % (attr, attr0, attr1)
+        msg = f"label.{attr}: {repr(attr0)} != {repr(attr1)}"
         assert_equal(attr0, attr1, msg)
     for attr in ["vertices", "pos", "values"]:
         a0 = getattr(l0, attr)

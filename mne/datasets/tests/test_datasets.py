@@ -1,30 +1,30 @@
-from functools import partial
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 import os
-from os import path as op
 import re
 import shutil
 import zipfile
+from functools import partial
+from os import path as op
 
 import pooch
 import pytest
 
 from mne import datasets, read_labels_from_annot, write_labels_to_annot
-from mne.datasets import testing, fetch_infant_template, fetch_phantom, fetch_dataset
+from mne.datasets import fetch_dataset, fetch_infant_template, fetch_phantom, testing
 from mne.datasets._fsaverage.base import _set_montage_coreg_path
 from mne.datasets._infant import base as infant_base
 from mne.datasets._phantom import base as phantom_base
 from mne.datasets.utils import _manifest_check_download
-
 from mne.utils import (
-    requires_good_network,
-    get_subjects_dir,
     ArgvSetter,
     _pl,
-    use_log_level,
     catch_logging,
+    get_subjects_dir,
     hashfunc,
+    requires_good_network,
+    use_log_level,
 )
-
 
 subjects_dir = testing.data_path(download=False) / "subjects"
 
@@ -60,7 +60,7 @@ def test_datasets_basic(tmp_path, monkeypatch):
         else:
             assert dataset.get_version() is None
             assert not datasets.has_dataset(dname)
-        print("%s: %s" % (dname, datasets.has_dataset(dname)))
+        print(f"{dname}: {datasets.has_dataset(dname)}")
     tempdir = str(tmp_path)
     # Explicitly test one that isn't preset (given the config)
     monkeypatch.setenv("MNE_DATASETS_SAMPLE_PATH", tempdir)
@@ -179,8 +179,8 @@ def test_fetch_parcellations(tmp_path):
     os.mkdir(op.join(this_subjects_dir, "fsaverage", "surf"))
     for hemi in ("lh", "rh"):
         shutil.copyfile(
-            op.join(subjects_dir, "fsaverage", "surf", "%s.white" % hemi),
-            op.join(this_subjects_dir, "fsaverage", "surf", "%s.white" % hemi),
+            op.join(subjects_dir, "fsaverage", "surf", f"{hemi}.white"),
+            op.join(this_subjects_dir, "fsaverage", "surf", f"{hemi}.white"),
         )
     # speed up by prenteding we have one of them
     with open(
@@ -192,9 +192,7 @@ def test_fetch_parcellations(tmp_path):
         datasets.fetch_hcp_mmp_parcellation(subjects_dir=this_subjects_dir)
     for hemi in ("lh", "rh"):
         assert op.isfile(
-            op.join(
-                this_subjects_dir, "fsaverage", "label", "%s.aparc_sub.annot" % hemi
-            )
+            op.join(this_subjects_dir, "fsaverage", "label", f"{hemi}.aparc_sub.annot")
         )
     # test our annot round-trips here
     kwargs = dict(
@@ -235,7 +233,7 @@ def test_manifest_check_download(tmp_path, n_have, monkeypatch):
     manifest_path = op.join(str(tmp_path), "manifest.txt")
     with open(manifest_path, "w") as fid:
         for fname in _zip_fnames:
-            fid.write("%s\n" % fname)
+            fid.write(f"{fname}\n")
     assert n_have in range(len(_zip_fnames) + 1)
     assert not op.isdir(destination)
     if n_have > 0:
@@ -253,7 +251,7 @@ def test_manifest_check_download(tmp_path, n_have, monkeypatch):
             _manifest_check_download(manifest_path, destination, url, hash_)
     log = log.getvalue()
     n_missing = 3 - n_have
-    assert ("%d file%s missing from" % (n_missing, _pl(n_missing))) in log
+    assert (f"{n_missing} file{_pl(n_missing)} missing from") in log
     for want in ("Extracting missing", "Successfully "):
         if n_missing > 0:
             assert want in log
@@ -311,9 +309,7 @@ def test_fetch_uncompressed_file(tmp_path):
     """Test downloading an uncompressed file with our fetch function."""
     dataset_dict = dict(
         dataset_name="license",
-        url=(
-            "https://raw.githubusercontent.com/mne-tools/mne-python/main/" "LICENSE.txt"
-        ),
+        url="https://raw.githubusercontent.com/mne-tools/mne-python/main/LICENSE.txt",
         archive_name="LICENSE.foo",
         folder_name=op.join(tmp_path, "foo"),
         hash=None,

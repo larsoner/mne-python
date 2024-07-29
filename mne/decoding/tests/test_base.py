@@ -2,28 +2,30 @@
 #         Marijn van Vliet, <w.m.vanvliet@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
+
+from contextlib import nullcontext
 
 import numpy as np
-from numpy.testing import (
-    assert_array_equal,
-    assert_array_almost_equal,
-    assert_equal,
-    assert_allclose,
-    assert_array_less,
-)
 import pytest
+from numpy.testing import (
+    assert_allclose,
+    assert_array_almost_equal,
+    assert_array_equal,
+    assert_array_less,
+    assert_equal,
+)
 
-from mne import create_info, EpochsArray
+from mne import EpochsArray, create_info
+from mne.decoding import GeneralizingEstimator, Scaler, TransformerMixin, Vectorizer
 from mne.decoding.base import (
-    _get_inverse_funcs,
-    LinearModel,
-    get_coef,
-    cross_val_multiscore,
     BaseEstimator,
+    LinearModel,
+    _get_inverse_funcs,
+    cross_val_multiscore,
+    get_coef,
 )
 from mne.decoding.search_light import SlidingEstimator
-from mne.decoding import Scaler, TransformerMixin, Vectorizer, GeneralizingEstimator
-
 
 pytest.importorskip("sklearn")
 
@@ -69,17 +71,17 @@ def _make_data(n_samples=1000, n_features=5, n_targets=3):
 
 def test_get_coef():
     """Test getting linear coefficients (filters/patterns) from estimators."""
+    from sklearn import svm
     from sklearn.base import (
-        TransformerMixin,
         BaseEstimator,
+        TransformerMixin,
         is_classifier,
         is_regressor,
     )
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import StandardScaler
-    from sklearn import svm
     from sklearn.linear_model import Ridge
     from sklearn.model_selection import GridSearchCV
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
 
     lm_classification = LinearModel()
     assert is_classifier(lm_classification)
@@ -132,16 +134,23 @@ def test_get_coef():
         assert expected_n == len(_get_inverse_funcs(est))
 
     bad_estimators = [
-        Clf(),  # no preprocessing
-        Inv(),  # final estimator isn't classifier
-        make_pipeline(NoInv(), Clf()),  # first step isn't invertible
+        Clf(),  # 0: no preprocessing
+        Inv(),  # 1: final estimator isn't classifier
+        make_pipeline(NoInv(), Clf()),  # 2: first step isn't invertible
         make_pipeline(
             Inv(), make_pipeline(Inv(), NoInv()), Clf()
-        ),  # nested step isn't invertible
+        ),  # 3: nested step isn't invertible
     ]
-    for est in bad_estimators:
+    # It's the NoInv that triggers the warning, but too hard to context manage just
+    # the correct part of the bad_estimators loop
+    for ei, est in enumerate(bad_estimators):
         est.fit(X, y)
-        invs = _get_inverse_funcs(est)
+        if ei in (2, 3):  # the NoInv indices
+            ctx = pytest.warns(RuntimeWarning, match="Cannot inverse transform")
+        else:
+            ctx = nullcontext()
+        with ctx:
+            invs = _get_inverse_funcs(est)
         assert_equal(invs, list())
 
     # II. Test get coef for classification/regression estimators and pipelines
@@ -296,11 +305,13 @@ def test_get_coef_multiclass(n_features, n_targets):
         (3, 1, 2),
     ],
 )
+# TODO: Need to fix this properly in LinearModel
+@pytest.mark.filterwarnings("ignore:'multi_class' was deprecated in.*:FutureWarning")
 def test_get_coef_multiclass_full(n_classes, n_channels, n_times):
     """Test a full example with pattern extraction."""
-    from sklearn.pipeline import make_pipeline
     from sklearn.linear_model import LogisticRegression
     from sklearn.model_selection import StratifiedKFold
+    from sklearn.pipeline import make_pipeline
 
     data = np.zeros((10 * n_classes, n_channels, n_times))
     # Make only the first channel informative
@@ -318,7 +329,7 @@ def test_get_coef_multiclass_full(n_classes, n_channels, n_times):
     )
     scorer = "roc_auc_ovr_weighted"
     time_gen = GeneralizingEstimator(clf, scorer, verbose=True)
-    X = epochs.get_data()
+    X = epochs.get_data(copy=False)
     y = epochs.events[:, 2]
     n_splits = 3
     cv = StratifiedKFold(n_splits=n_splits)
@@ -393,8 +404,8 @@ def test_linearmodel():
 
 def test_cross_val_multiscore():
     """Test cross_val_multiscore for computing scores on decoding over time."""
+    from sklearn.linear_model import LinearRegression, LogisticRegression
     from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score
-    from sklearn.linear_model import LogisticRegression, LinearRegression
 
     logreg = LogisticRegression(solver="liblinear", random_state=0)
 
@@ -455,8 +466,8 @@ def test_cross_val_multiscore():
 def test_sklearn_compliance():
     """Test LinearModel compliance with sklearn."""
     pytest.importorskip("sklearn")
-    from sklearn.utils.estimator_checks import check_estimator
     from sklearn.linear_model import LogisticRegression
+    from sklearn.utils.estimator_checks import check_estimator
 
     lm = LinearModel(LogisticRegression())
     ignores = (

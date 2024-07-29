@@ -2,10 +2,14 @@
 
 set -o pipefail
 export MNE_TQDM=off
+echo "export OPENBLAS_NUM_THREADS=4" >> $BASH_ENV
+echo "export MNE_DOC_BUILD_N_JOBS=1" >> $BASH_ENV
 
 if [ "$CIRCLE_BRANCH" == "main" ] || [[ $(cat gitlog.txt) == *"[circle full]"* ]] || [[ "$CIRCLE_BRANCH" == "maint/"* ]]; then
     echo "Doing a full build";
     echo html-memory > build.txt;
+    echo "export OPENBLAS_NUM_THREADS=1" >> $BASH_ENV
+    echo "export MNE_DOC_BUILD_N_JOBS=4" >> $BASH_ENV
     python -c "import mne; mne.datasets._download_all_example_data()";
 else
     echo "Doing a partial build";
@@ -58,6 +62,9 @@ else
             if [[ $(cat $FNAME | grep -x ".*brainstorm.*bst_phantom_elekta.*" | wc -l) -gt 0 ]]; then
                 python -c "import mne; print(mne.datasets.brainstorm.bst_phantom_elekta.data_path(update_path=True, accept=True))";
             fi;
+            if [[ $(cat $FNAME | grep -x ".*datasets.*phantom_kernel.*" | wc -l) -gt 0 ]]; then
+                python -c "import mne; print(mne.datasets.phantom_kernel.data_path(update_path=True))";
+            fi;
             if [[ $(cat $FNAME | grep -x ".*datasets.*hcp_mmp_parcellation.*" | wc -l) -gt 0 ]]; then
                 python -c "import mne; print(mne.datasets.sample.data_path(update_path=True))";
                 python -c "import mne; print(mne.datasets.fetch_hcp_mmp_parcellation(subjects_dir=mne.datasets.sample.data_path() / 'subjects', accept=True))";
@@ -109,6 +116,9 @@ else
             fi;
             if [[ $(cat $FNAME | grep -x ".*datasets.*ucl_opm_auditory.*" | wc -l) -gt 0 ]]; then
                 python -c "import mne; print(mne.datasets.ucl_opm_auditory.data_path(update_path=True))";
+            fi;
+            if [[ $(cat $FNAME | grep -x ".*datasets.*phantom_kit.*" | wc -l) -gt 0 ]]; then
+                python -c "import mne; print(mne.datasets.phantom_kit.data_path(update_path=True))";
             fi;
         fi;
     done;

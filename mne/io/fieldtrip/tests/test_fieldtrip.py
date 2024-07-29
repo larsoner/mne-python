@@ -3,29 +3,30 @@
 #          Dirk Gütlin <dirk.guetlin@stud.sbg.ac.at>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import copy
 import itertools
 from contextlib import nullcontext
 
-import pytest
 import numpy as np
+import pytest
 
 import mne
 from mne.datasets import testing
 from mne.io import read_raw_fieldtrip
-from mne.io.fieldtrip.utils import NOINFO_WARNING, _create_events
 from mne.io.fieldtrip.tests.helpers import (
+    assert_warning_in_record,
+    check_data,
     check_info_fields,
     get_data_paths,
-    get_raw_data,
     get_epochs,
     get_evoked,
-    pandas_not_found_warning_msg,
+    get_raw_data,
     get_raw_info,
-    check_data,
-    assert_warning_in_record,
+    pandas_not_found_warning_msg,
 )
+from mne.io.fieldtrip.utils import NOINFO_WARNING, _create_events
 from mne.io.tests.test_raw import _test_raw_reader
 from mne.utils import _check_pandas_installed, _record_warnings
 
@@ -67,16 +68,14 @@ def test_read_evoked(cur_system, version, use_info):
     """Test comparing reading an Evoked object and the FieldTrip version."""
     test_data_folder_ft = get_data_paths(cur_system)
     mne_avg = get_evoked(cur_system)
+    cur_fname = test_data_folder_ft / f"averaged_{version}.mat"
     if use_info:
         info = get_raw_info(cur_system)
-        ctx = nullcontext()
+        avg_ft = mne.io.read_evoked_fieldtrip(cur_fname, info)
     else:
         info = None
-        ctx = pytest.warns(**no_info_warning)
-
-    cur_fname = test_data_folder_ft / f"averaged_{version}.mat"
-    with ctx:
-        avg_ft = mne.io.read_evoked_fieldtrip(cur_fname, info)
+        with _record_warnings(), pytest.warns(**no_info_warning):
+            avg_ft = mne.io.read_evoked_fieldtrip(cur_fname, info)
 
     mne_data = mne_avg.data[:, :-1]
     ft_data = avg_ft.data
@@ -97,6 +96,7 @@ def test_read_epochs(cur_system, version, use_info, monkeypatch):
     has_pandas = pandas is not False
     test_data_folder_ft = get_data_paths(cur_system)
     mne_epoched = get_epochs(cur_system)
+    cur_fname = test_data_folder_ft / f"epoched_{version}.mat"
     if use_info:
         info = get_raw_info(cur_system)
         ctx = nullcontext()
@@ -104,9 +104,8 @@ def test_read_epochs(cur_system, version, use_info, monkeypatch):
         info = None
         ctx = pytest.warns(**no_info_warning)
 
-    cur_fname = test_data_folder_ft / f"epoched_{version}.mat"
     if has_pandas:
-        with ctx:
+        with _record_warnings(), ctx:
             epoched_ft = mne.io.read_epochs_fieldtrip(cur_fname, info)
         assert isinstance(epoched_ft.metadata, pandas.DataFrame)
     else:
@@ -117,8 +116,8 @@ def test_read_epochs(cur_system, version, use_info, monkeypatch):
             if info is None:
                 assert_warning_in_record(NOINFO_WARNING, warn_record)
 
-    mne_data = mne_epoched.get_data()[:, :, :-1]
-    ft_data = epoched_ft.get_data()
+    mne_data = mne_epoched.get_data(copy=False)[:, :, :-1]
+    ft_data = epoched_ft.get_data(copy=False)
 
     check_data(mne_data, ft_data, cur_system)
     check_info_fields(mne_epoched, epoched_ft, use_info)
@@ -132,7 +131,7 @@ def test_read_epochs(cur_system, version, use_info, monkeypatch):
         return out
 
     monkeypatch.setattr(pymatreader, "read_mat", modify_mat)
-    with pytest.warns(RuntimeWarning, match="multiple"):
+    with _record_warnings(), pytest.warns(RuntimeWarning, match="multiple"):
         mne.io.read_epochs_fieldtrip(cur_fname, info)
 
 
@@ -159,7 +158,7 @@ def test_read_raw_fieldtrip(cur_system, version, use_info):
 
     cur_fname = test_data_folder_ft / f"raw_{version}.mat"
 
-    with ctx:
+    with _record_warnings(), ctx:
         raw_fiff_ft = mne.io.read_raw_fieldtrip(cur_fname, info)
 
     if cur_system == "BTI" and not use_info:
@@ -252,19 +251,19 @@ def test_one_channel_elec_bug(version):
 @pytest.mark.filterwarnings("ignore:.*parse meas date.*:RuntimeWarning")
 @pytest.mark.filterwarnings("ignore:.*number of bytes.*:RuntimeWarning")
 @pytest.mark.parametrize("version", all_versions)
-@pytest.mark.parametrize("type", ["averaged", "epoched", "raw"])
-def test_throw_exception_on_cellarray(version, type):
+@pytest.mark.parametrize("type_", ["averaged", "epoched", "raw"])
+def test_throw_exception_on_cellarray(version, type_):
     """Test for a meaningful exception when the data is a cell array."""
-    fname = get_data_paths("cellarray") / f"{type}_{version}.mat"
+    fname = get_data_paths("cellarray") / f"{type_}_{version}.mat"
     info = get_raw_info("CNT")
     with pytest.raises(
-        RuntimeError, match="Loading of data in cell arrays " "is not supported"
+        RuntimeError, match="Loading of data in cell arrays is not supported"
     ):
-        if type == "averaged":
+        if type_ == "averaged":
             mne.read_evoked_fieldtrip(fname, info)
-        elif type == "epoched":
+        elif type_ == "epoched":
             mne.read_epochs_fieldtrip(fname, info)
-        elif type == "raw":
+        elif type_ == "raw":
             mne.io.read_raw_fieldtrip(fname, info)
 
 
@@ -292,7 +291,7 @@ def test_throw_error_on_non_uniform_time_field():
 
     with pytest.raises(
         RuntimeError,
-        match="Loading data with non-uniform " "times per epoch is not supported",
+        match="Loading data with non-uniform times per epoch is not supported",
     ):
         mne.io.read_epochs_fieldtrip(fname, info=None)
 

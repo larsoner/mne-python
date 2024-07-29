@@ -1,32 +1,26 @@
 # Authors: Christian Brodbeck <christianbrodbeck@nyu.edu>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-from ..utils import verbose, get_config, warn
+from ..utils import get_config, verbose
 
 
 @verbose
 def coregistration(
-    tabbed=False,
-    split=True,
+    *,
     width=None,
+    height=None,
     inst=None,
     subject=None,
     subjects_dir=None,
-    guess_mri_subject=None,
-    height=None,
     head_opacity=None,
     head_high_res=None,
     trans=None,
-    scrollable=True,
-    *,
-    orient_to_surface=True,
-    scale_by_distance=True,
-    mark_inside=True,
+    orient_to_surface=None,
+    scale_by_distance=None,
+    mark_inside=None,
     interaction=None,
-    scale=None,
-    advanced_rendering=None,
-    head_inside=True,
     fullscreen=None,
     show=True,
     block=False,
@@ -44,29 +38,20 @@ def coregistration(
 
     Parameters
     ----------
-    tabbed : bool
-        Combine the data source panel and the coregistration panel into a
-        single panel with tabs.
-    split : bool
-        Split the main panels with a movable splitter (good for QT4 but
-        unnecessary for wx backend).
     width : int | None
         Specify the width for window (in logical pixels).
         Default is None, which uses ``MNE_COREG_WINDOW_WIDTH`` config value
         (which defaults to 800).
+    height : int | None
+        Specify a height for window (in logical pixels).
+        Default is None, which uses ``MNE_COREG_WINDOW_WIDTH`` config value
+        (which defaults to 400).
     inst : None | str
         Path to an instance file containing the digitizer data. Compatible for
         Raw, Epochs, and Evoked files.
     subject : None | str
         Name of the mri subject.
     %(subjects_dir)s
-    guess_mri_subject : bool
-        When selecting a new head shape file, guess the subject's name based
-        on the filename and change the MRI subject accordingly (default True).
-    height : int | None
-        Specify a height for window (in logical pixels).
-        Default is None, which uses ``MNE_COREG_WINDOW_WIDTH`` config value
-        (which defaults to 400).
     head_opacity : float | None
         The opacity of the head surface in the range [0., 1.].
         Default is None, which uses ``MNE_COREG_HEAD_OPACITY`` config value
@@ -77,8 +62,6 @@ def coregistration(
         (which defaults to True).
     trans : path-like | None
         The transform file to use.
-    scrollable : bool
-        Make the coregistration panel vertically scrollable (default True).
     orient_to_surface : bool | None
         If True (default), orient EEG electrode and head shape points
         to the head surface.
@@ -101,21 +84,6 @@ def coregistration(
         .. versionchanged:: 1.0
            Default interaction mode if ``None`` and no config setting found
            changed from ``'trackball'`` to ``'terrain'``.
-    scale : float | None
-        The scaling for the scene.
-
-        .. versionadded:: 0.16
-    advanced_rendering : bool
-        Use advanced OpenGL rendering techniques (default True).
-        For some renderers (such as MESA software) this can cause rendering
-        bugs.
-
-        .. versionadded:: 0.18
-    head_inside : bool
-        If True (default), add opaque inner scalp head surface to help occlude
-        points behind the head.
-
-        .. versionadded:: 0.23
     %(fullscreen)s
         Default is None, which uses ``MNE_COREG_FULLSCREEN`` config value
         (which defaults to False).
@@ -142,38 +110,11 @@ def coregistration(
 
     .. youtube:: ALV5qqMHLlQ
     """
-    unsupported_params = {
-        "tabbed": (tabbed, False),
-        "split": (split, True),
-        "scrollable": (scrollable, True),
-        "head_inside": (head_inside, True),
-        "guess_mri_subject": guess_mri_subject,
-        "scale": scale,
-        "advanced_rendering": advanced_rendering,
-    }
-    for key, val in unsupported_params.items():
-        if isinstance(val, tuple):
-            to_raise = val[0] != val[1]
-        else:
-            to_raise = val is not None
-        if to_raise:
-            warn(
-                f"The parameter {key} is not supported with"
-                " the pyvistaqt 3d backend. It will be ignored."
-            )
     config = get_config()
-    if guess_mri_subject is None:
-        guess_mri_subject = config.get("MNE_COREG_GUESS_MRI_SUBJECT", "true") == "true"
     if head_high_res is None:
         head_high_res = config.get("MNE_COREG_HEAD_HIGH_RES", "true") == "true"
-    if advanced_rendering is None:
-        advanced_rendering = (
-            config.get("MNE_COREG_ADVANCED_RENDERING", "true") == "true"
-        )
     if head_opacity is None:
         head_opacity = config.get("MNE_COREG_HEAD_OPACITY", 0.8)
-    if head_inside is None:
-        head_inside = config.get("MNE_COREG_HEAD_INSIDE", "true").lower() == "true"
     if width is None:
         width = config.get("MNE_COREG_WINDOW_WIDTH", 800)
     if height is None:
@@ -183,23 +124,23 @@ def coregistration(
             subjects_dir = config["SUBJECTS_DIR"]
         elif "MNE_COREG_SUBJECTS_DIR" in config:
             subjects_dir = config["MNE_COREG_SUBJECTS_DIR"]
+    false_like = ("false", "0")
     if orient_to_surface is None:
-        orient_to_surface = config.get("MNE_COREG_ORIENT_TO_SURFACE", "") == "true"
+        orient_to_surface = config.get("MNE_COREG_ORIENT_TO_SURFACE", "true").lower()
+        orient_to_surface = orient_to_surface not in false_like
     if scale_by_distance is None:
-        scale_by_distance = config.get("MNE_COREG_SCALE_BY_DISTANCE", "") == "true"
+        scale_by_distance = config.get("MNE_COREG_SCALE_BY_DISTANCE", "true").lower()
+        scale_by_distance = scale_by_distance not in false_like
     if interaction is None:
         interaction = config.get("MNE_COREG_INTERACTION", "terrain")
     if mark_inside is None:
-        mark_inside = config.get("MNE_COREG_MARK_INSIDE", "") == "true"
-    if scale is None:
-        scale = config.get("MNE_COREG_SCENE_SCALE", 0.16)
+        mark_inside = config.get("MNE_COREG_MARK_INSIDE", "true").lower()
+        mark_inside = mark_inside not in false_like
     if fullscreen is None:
         fullscreen = config.get("MNE_COREG_FULLSCREEN", "") == "true"
     head_opacity = float(head_opacity)
-    head_inside = bool(head_inside)
     width = int(width)
     height = int(height)
-    scale = float(scale)
 
     from ..viz.backends.renderer import MNE_3D_BACKEND_TESTING
     from ._coreg import CoregistrationUI
@@ -238,13 +179,13 @@ class _GUIScraper:
         try:
             from mne_gui_addons._ieeg_locate import (
                 IntracranialElectrodeLocator,
-            )  # noqa: E501
+            )
         except Exception:
             pass
         else:
             gui_classes = gui_classes + (IntracranialElectrodeLocator,)
-        from sphinx_gallery.scrapers import figure_rst
         from qtpy import QtGui
+        from sphinx_gallery.scrapers import figure_rst
 
         for gui in block_vars["example_globals"].values():
             if (

@@ -3,12 +3,13 @@
 # Authors: Clemens Brunner <clemens.brunner@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-
-from pathlib import Path
 from functools import partial
+from pathlib import Path
 
 from ..utils import fill_doc
+from .base import BaseRaw
 
 
 def _read_unsupported(fname, **kwargs):
@@ -24,27 +25,27 @@ def _read_unsupported(fname, **kwargs):
 # supported read file formats
 def _get_supported():
     from . import (
-        read_raw_edf,
+        read_raw_artemis123,
         read_raw_bdf,
-        read_raw_gdf,
+        read_raw_boxy,
         read_raw_brainvision,
-        read_raw_fif,
-        read_raw_eeglab,
         read_raw_cnt,
+        read_raw_ctf,
+        read_raw_curry,
+        read_raw_edf,
+        read_raw_eeglab,
         read_raw_egi,
         read_raw_eximia,
-        read_raw_nirx,
         read_raw_fieldtrip,
-        read_raw_artemis123,
-        read_raw_nicolet,
-        read_raw_kit,
-        read_raw_ctf,
-        read_raw_boxy,
-        read_raw_snirf,
+        read_raw_fif,
         read_raw_fil,
-        read_raw_nihon,
-        read_raw_curry,
+        read_raw_gdf,
+        read_raw_kit,
         read_raw_nedf,
+        read_raw_nicolet,
+        read_raw_nihon,
+        read_raw_nirx,
+        read_raw_snirf,
     )
 
     return {
@@ -109,7 +110,7 @@ def split_name_ext(fname):
 
 
 @fill_doc
-def read_raw(fname, *, preload=False, verbose=None, **kwargs):
+def read_raw(fname, *, preload=False, verbose=None, **kwargs) -> BaseRaw:
     """Read raw file.
 
     This function is a convenient wrapper for readers defined in `mne.io`. The

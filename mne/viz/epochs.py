@@ -9,43 +9,40 @@
 #          Stefan Repplinger <stefan.repplinger@ovgu.de>
 #          Daniel McCloy <dan@mccloy.info>
 #
-# License: Simplified BSD
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 from collections import Counter
 from copy import deepcopy
-import warnings
 
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
 
-from .raw import _setup_channel_selections
-from ..fixes import _sharex
-from ..defaults import _handle_default
-from ..utils import legacy, verbose, logger, warn, fill_doc, _check_option
-from ..utils.spectrum import _split_psd_kwargs
 from .._fiff.meas_info import create_info
-
 from .._fiff.pick import (
-    _picks_to_idx,
     _DATA_CH_TYPES_SPLIT,
     _VALID_CHANNEL_TYPES,
+    _picks_to_idx,
 )
+from ..defaults import _handle_default
+from ..utils import _check_option, fill_doc, legacy, logger, verbose, warn
+from ..utils.spectrum import _split_psd_kwargs
+from .raw import _setup_channel_selections
 from .utils import (
-    tight_layout,
-    _setup_vmin_vmax,
-    plt_show,
-    _check_cov,
-    _handle_precompute,
-    _compute_scalings,
     DraggableColorbar,
-    _setup_cmap,
-    _handle_decim,
-    _set_title_multiple_electrodes,
-    _make_combine_callable,
-    _set_window_title,
-    _make_event_color_dict,
+    _check_cov,
+    _compute_scalings,
     _get_channel_plotting_order,
+    _handle_decim,
+    _handle_precompute,
+    _make_combine_callable,
+    _make_event_color_dict,
+    _set_title_multiple_electrodes,
+    _set_window_title,
+    _setup_cmap,
+    _setup_vmin_vmax,
     _validate_type,
+    plt_show,
 )
 
 
@@ -147,19 +144,7 @@ def plot_epochs_image(
         ``overlay_times`` should be ordered to correspond with the
         :class:`~mne.Epochs` object (i.e., ``overlay_times[0]`` corresponds to
         ``epochs[0]``, etc).
-    %(combine)s
-        If callable, the callable must accept one positional input (data of
-        shape ``(n_epochs, n_channels, n_times)``) and return an
-        :class:`array <numpy.ndarray>` of shape ``(n_epochs, n_times)``. For
-        example::
-
-            combine = lambda data: np.median(data, axis=1)
-
-        If ``combine`` is ``None``, channels are combined by computing GFP,
-        unless ``group_by`` is also ``None`` and ``picks`` is a list of
-        specific channels (not channel types), in which case no combining is
-        performed and each channel gets its own figure. See Notes for further
-        details. Defaults to ``None``.
+    %(combine_plot_epochs_image)s
     group_by : None | dict
         Specifies which channels are aggregated into a single figure, with
         aggregation method determined by the ``combine`` parameter. If not
@@ -288,8 +273,8 @@ def plot_epochs_image(
         if len(set(this_ch_type)) > 1:
             types = ", ".join(set(this_ch_type))
             raise ValueError(
-                'Cannot combine sensors of different types; "{}" '
-                "contains types {}.".format(this_group, types)
+                f'Cannot combine sensors of different types; "{this_group}" contains '
+                f"types {types}."
             )
         # now we know they're all the same type...
         group_by[this_group] = dict(
@@ -299,15 +284,17 @@ def plot_epochs_image(
         # are they trying to combine a single channel?
         if len(these_picks) < 2 and combine_given:
             warn(
-                'Only one channel in group "{}"; cannot combine by method '
-                '"{}".'.format(this_group, combine)
+                f'Only one channel in group "{this_group}"; cannot combine by method '
+                f'"{combine}".'
             )
 
     # check for compatible `fig` / `axes`; instantiate figs if needed; add
     # fig(s) and axes into group_by
+    needs_colorbar = colorbar and (axes is not None or fig is not None)
     group_by = _validate_fig_and_axes(
-        fig, axes, group_by, evoked, colorbar, clear=clear
+        fig, axes, group_by, evoked, colorbar=needs_colorbar, clear=clear
     )
+    del fig, axes, needs_colorbar, clear
 
     # prepare images in advance to get consistent vmin/vmax.
     # At the same time, create a subsetted epochs object for each group
@@ -432,18 +419,17 @@ def plot_epochs_image(
 
 def _validate_fig_and_axes(fig, axes, group_by, evoked, colorbar, clear=False):
     """Check user-provided fig/axes compatibility with plot_epochs_image."""
-    from matplotlib.pyplot import figure, Axes, subplot2grid
+    from matplotlib.pyplot import Axes, figure, subplot2grid
 
     n_axes = 1 + int(evoked) + int(colorbar)
     ax_names = ("image", "evoked", "colorbar")
     ax_names = np.array(ax_names)[np.where([True, evoked, colorbar])]
-    prefix = "Since evoked={} and colorbar={}, ".format(evoked, colorbar)
+    prefix = f"Since evoked={evoked} and colorbar={colorbar}, "
 
     # got both fig and axes
     if fig is not None and axes is not None:
         raise ValueError(
-            'At least one of "fig" or "axes" must be None; got '
-            "fig={}, axes={}.".format(fig, axes)
+            f'At least one of "fig" or "axes" must be None; got fig={fig}, axes={axes}.'
         )
 
     # got fig=None and axes=None: make fig(s) and axes
@@ -453,7 +439,7 @@ def _validate_fig_and_axes(fig, axes, group_by, evoked, colorbar, clear=False):
         rowspan = 2 if evoked else 3
         shape = (3, 10)
         for this_group in group_by:
-            this_fig = figure()
+            this_fig = figure(layout="constrained")
             _set_window_title(this_fig, this_group)
             subplot2grid(shape, (0, 0), colspan=colspan, rowspan=rowspan, fig=this_fig)
             if evoked:
@@ -468,8 +454,7 @@ def _validate_fig_and_axes(fig, axes, group_by, evoked, colorbar, clear=False):
         # `plot_image`, be forgiving of presence/absence of sensor inset axis.
         if len(fig.axes) not in (n_axes, n_axes + 1):
             raise ValueError(
-                '{}"fig" must contain {} axes, got {}.'
-                "".format(prefix, n_axes, len(fig.axes))
+                f'{prefix}"fig" must contain {n_axes} axes, got {len(fig.axes)}.'
             )
         if len(list(group_by)) != 1:
             raise ValueError(
@@ -498,8 +483,7 @@ def _validate_fig_and_axes(fig, axes, group_by, evoked, colorbar, clear=False):
     if isinstance(axes, list):
         if len(axes) != n_axes:
             raise ValueError(
-                '{}"axes" must be length {}, got {}.'
-                "".format(prefix, n_axes, len(axes))
+                f'{prefix}"axes" must be length {n_axes}, got {len(axes)}.'
             )
         # for list of axes to work, must be only one group
         if len(list(group_by)) != 1:
@@ -518,14 +502,14 @@ def _validate_fig_and_axes(fig, axes, group_by, evoked, colorbar, clear=False):
         # group_by dict and the user won't have known what keys we chose.
         if set(axes) != set(group_by):
             raise ValueError(
-                'If "axes" is a dict its keys ({}) must match '
-                'the keys in "group_by" ({}).'.format(list(axes), list(group_by))
+                f'If "axes" is a dict its keys ({list(axes)}) must match the keys in '
+                f'"group_by" ({list(group_by)}).'
             )
         for this_group, this_axes_list in axes.items():
             if len(this_axes_list) != n_axes:
                 raise ValueError(
-                    '{}each value in "axes" must be a list of {} '
-                    "axes, got {}.".format(prefix, n_axes, len(this_axes_list))
+                    f'{prefix}each value in "axes" must be a list of {n_axes} axes, got'
+                    f" {len(this_axes_list)}."
                 )
             # NB: next line assumes all axes in each list are in same figure
             group_by[this_group]["fig"] = this_axes_list[0].get_figure()
@@ -602,8 +586,6 @@ def _plot_epochs_image(
     tmax = epochs.times[-1]
 
     ax_im = ax["image"]
-    fig = ax_im.get_figure()
-
     # draw the image
     cmap = _setup_cmap(cmap, norm=norm)
     n_epochs = len(image)
@@ -648,28 +630,30 @@ def _plot_epochs_image(
         ax["evoked"].set_xlim(tmin, tmax)
         ax["evoked"].lines[0].set_clip_on(True)
         ax["evoked"].collections[0].set_clip_on(True)
-        _sharex(ax["evoked"], ax_im)
+        ax["evoked"].sharex(ax_im)
         # fix the axes for proper updating during interactivity
         loc = ax_im.xaxis.get_major_locator()
         ax["evoked"].xaxis.set_major_locator(loc)
         ax["evoked"].yaxis.set_major_locator(AutoLocator())
 
+    fig = ax_im.get_figure()
+
     # draw the colorbar
     if colorbar:
-        from matplotlib.pyplot import colorbar as cbar
-
-        this_colorbar = cbar(im, cax=ax["colorbar"])
-        this_colorbar.ax.set_ylabel(unit, rotation=270, labelpad=12)
+        if "colorbar" in ax:  # axes supplied by user
+            cax = ax["colorbar"]
+            this_colorbar = cax.figure.colorbar(im, cax=cax)
+            this_colorbar.ax.set_ylabel(unit, rotation=270, labelpad=12)
+        else:  # we created them
+            this_colorbar = fig.colorbar(im, ax=ax_im)
+            this_colorbar.ax.set_title(unit)
         if cmap[1]:
             ax_im.CB = DraggableColorbar(
                 this_colorbar, im, kind="epochs_image", ch_type=unit
             )
-        with warnings.catch_warnings(record=True):
-            warnings.simplefilter("ignore")
-            tight_layout(fig=fig)
 
     # finish
-    plt_show(show)
+    plt_show(show, fig=fig)
     return fig
 
 
@@ -718,12 +702,13 @@ def plot_drop_log(
         The figure.
     """
     import matplotlib.pyplot as plt
+
     from ..epochs import _drop_log_stats
 
     percent = _drop_log_stats(drop_log, ignore)
     if percent < threshold:
         logger.info(
-            "Percent dropped epochs < supplied threshold; not " "plotting drop log."
+            "Percent dropped epochs < supplied threshold; not plotting drop log."
         )
         return
     absolute = len([x for x in drop_log if len(x) if not any(y in ignore for y in x)])
@@ -733,8 +718,8 @@ def plot_drop_log(
     ch_names = np.array(list(scores.keys()))
     counts = np.array(list(scores.values()))
     # init figure, handle easy case (no drops)
-    fig, ax = plt.subplots()
-    title = f"{absolute} of {n_epochs_before_drop} epochs removed " f"({percent:.1f}%)"
+    fig, ax = plt.subplots(layout="constrained")
+    title = f"{absolute} of {n_epochs_before_drop} epochs removed ({percent:.1f}%)"
     if subject is not None:
         title = f"{subject}: {title}"
     ax.set_title(title)
@@ -755,7 +740,6 @@ def plot_drop_log(
     )
     ax.set_ylabel("% of epochs removed")
     ax.grid(axis="y")
-    tight_layout(pad=1, fig=fig)
     plt_show(show)
     return fig
 
@@ -786,6 +770,7 @@ def plot_epochs(
     *,
     theme=None,
     overview_mode=None,
+    splash=True,
 ):
     """Visualize epochs.
 
@@ -881,6 +866,9 @@ def plot_epochs(
     %(overview_mode)s
 
         .. versionadded:: 1.1
+    %(splash)s
+
+        .. versionadded:: 1.6
 
     Returns
     -------
@@ -1086,6 +1074,7 @@ def plot_epochs(
         use_opengl=use_opengl,
         theme=theme,
         overview_mode=overview_mode,
+        splash=splash,
     )
 
     fig = _get_browser(show=show, block=block, **params)
@@ -1113,7 +1102,7 @@ def plot_epochs_psd(
     area_mode="std",
     area_alpha=0.33,
     dB=True,
-    estimate="auto",
+    estimate="power",
     show=True,
     n_jobs=None,
     average=False,

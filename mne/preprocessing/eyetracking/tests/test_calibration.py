@@ -1,8 +1,10 @@
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
+import numpy as np
 import pytest
 
-import numpy as np
-
 from mne.datasets.testing import data_path, requires_testing_data
+
 from ..calibration import Calibration, read_eyelink_calibration
 
 # for test_read_eylink_calibration

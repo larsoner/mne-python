@@ -2,37 +2,38 @@
 #          Britta Westner <britta.wstnr@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import copy as cp
 
-import pytest
-from numpy.testing import assert_array_equal, assert_allclose, assert_array_less
 import numpy as np
+import pytest
+from numpy.testing import assert_allclose, assert_array_equal, assert_array_less
 
 import mne
 from mne import pick_types
+from mne._fiff.constants import FIFF
+from mne._fiff.pick import pick_info
 from mne.beamformer import (
-    make_dics,
+    Beamformer,
     apply_dics,
+    apply_dics_csd,
     apply_dics_epochs,
     apply_dics_tfr_epochs,
-    apply_dics_csd,
+    make_dics,
     read_beamformer,
-    Beamformer,
 )
 from mne.beamformer._compute_beamformer import _prepare_beamformer_input
 from mne.beamformer._dics import _prepare_noise_csd
 from mne.beamformer.tests.test_lcmv import _assert_weight_norm
 from mne.datasets import testing
-from mne._fiff.constants import FIFF
 from mne.io import read_info
-from mne._fiff.pick import pick_info
 from mne.proj import compute_proj_evoked, make_projector
 from mne.surface import _compute_nearest
-from mne.time_frequency import CrossSpectralDensity, csd_morlet, EpochsTFR, csd_tfr
+from mne.time_frequency import CrossSpectralDensity, EpochsTFRArray, csd_morlet, csd_tfr
 from mne.time_frequency.csd import _sym_mat_to_vector
-from mne.transforms import invert_transform, apply_trans
-from mne.utils import object_diff, catch_logging
+from mne.transforms import apply_trans, invert_transform
+from mne.utils import catch_logging, object_diff
 
 data_path = testing.data_path(download=False)
 fname_raw = data_path / "MEG" / "sample" / "sample_audvis_trunc_raw.fif"
@@ -599,14 +600,12 @@ def test_real(_load_forward, idx):
 
     # check whether a filters object without src_type throws expected warning
     del filters_vol["src_type"]  # emulate 0.16 behaviour to cause warning
-    with pytest.warns(
-        RuntimeWarning, match="spatial filter does not contain " "src_type"
-    ):
+    with pytest.warns(RuntimeWarning, match="spatial filter does not contain src_type"):
         apply_dics_csd(csd, filters_vol)
 
 
 @pytest.mark.filterwarnings(
-    "ignore:The use of several sensor types with the" ":RuntimeWarning"
+    "ignore:The use of several sensor types with the:RuntimeWarning"
 )
 @idx_param
 def test_apply_dics_timeseries(_load_forward, idx):
@@ -726,7 +725,7 @@ def test_apply_dics_tfr(return_generator):
     data = rng.random((n_epochs, n_chans, len(freqs), n_times))
     data *= 1e-6
     data = data + data * 1j  # add imag. component to simulate phase
-    epochs_tfr = EpochsTFR(info, data, times=times, freqs=freqs)
+    epochs_tfr = EpochsTFRArray(info=info, data=data, times=times, freqs=freqs)
 
     # Create a DICS beamformer and convert the EpochsTFR to source space.
     csd = csd_tfr(epochs_tfr)

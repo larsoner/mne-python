@@ -3,13 +3,14 @@
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import numpy as np
 
-from ..nirs import _validate_nirs_info
-from ...io import BaseRaw
 from ..._fiff.constants import FIFF
-from ...utils import _validate_type, warn, verbose
+from ...io import BaseRaw
+from ...utils import _validate_type, verbose, warn
+from ..nirs import _validate_nirs_info
 
 
 @verbose

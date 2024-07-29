@@ -3,18 +3,18 @@
 #          Denis Engemann <denis.engemann@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 from copy import deepcopy
 
 import numpy as np
 
+from ..utils import _pl, logger, verbose
 from .constants import FIFF
+from .matrix import _read_named_matrix, write_named_matrix
 from .tag import read_tag
 from .tree import dir_tree_find
-from .write import start_block, end_block, write_int
-from .matrix import write_named_matrix, _read_named_matrix
-
-from ..utils import logger, verbose, _pl
+from .write import end_block, start_block, write_int
 
 
 def _add_kind(one):
@@ -43,8 +43,8 @@ def _calibrate_comp(
             p = ch_names.count(names[ii])
             if p != 1:
                 raise RuntimeError(
-                    "Channel %s does not appear exactly once "
-                    "in data, found %d instance%s" % (names[ii], p, _pl(p))
+                    f"Channel {names[ii]} does not appear exactly once "
+                    f"in data, found {p:d} instance{_pl(p)}"
                 )
             idx = ch_names.index(names[ii])
             val = chs[idx][mult_keys[0]] * chs[idx][mult_keys[1]]
@@ -145,7 +145,7 @@ def _read_ctf_comp(fid, node, chs, ch_names_mapping):
         compdata.append(one)
 
     if len(compdata) > 0:
-        logger.info("    Read %d compensation matrices" % len(compdata))
+        logger.info(f"    Read {len(compdata)} compensation matrices")
 
     return compdata
 

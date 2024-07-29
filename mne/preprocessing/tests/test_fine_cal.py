@@ -2,22 +2,23 @@
 #          Eric Larson <larson.eric.d@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 import numpy as np
-from numpy.testing import assert_allclose
 import pytest
+from numpy.testing import assert_allclose
 
 from mne import pick_types
-from mne.io import read_raw_fif
-from mne.datasets import testing
 from mne._fiff.tag import _loc_to_coil_trans
+from mne.datasets import testing
+from mne.io import read_raw_fif
 from mne.preprocessing import (
-    read_fine_calibration,
-    write_fine_calibration,
     compute_fine_calibration,
     maxwell_filter,
+    read_fine_calibration,
+    write_fine_calibration,
 )
 from mne.preprocessing.tests.test_maxwell import _assert_shielding
-from mne.transforms import rot_to_quat, _angle_between_quats
+from mne.transforms import _angle_dist_between_rigid
 from mne.utils import object_diff
 
 # Define fine calibration filepaths
@@ -74,16 +75,17 @@ def test_compute_fine_cal():
     orig_trans = _loc_to_coil_trans(orig_locs)
     want_trans = _loc_to_coil_trans(want_locs)
     got_trans = _loc_to_coil_trans(got_locs)
-    dist = np.linalg.norm(got_trans[:, :3, 3] - want_trans[:, :3, 3], axis=1)
-    assert_allclose(dist, 0.0, atol=1e-6)
-    dist = np.linalg.norm(got_trans[:, :3, 3] - orig_trans[:, :3, 3], axis=1)
-    assert_allclose(dist, 0.0, atol=1e-6)
-    orig_quat = rot_to_quat(orig_trans[:, :3, :3])
-    want_quat = rot_to_quat(want_trans[:, :3, :3])
-    got_quat = rot_to_quat(got_trans[:, :3, :3])
-    want_orig_angles = np.rad2deg(_angle_between_quats(want_quat, orig_quat))
-    got_want_angles = np.rad2deg(_angle_between_quats(got_quat, want_quat))
-    got_orig_angles = np.rad2deg(_angle_between_quats(got_quat, orig_quat))
+    want_orig_angles, want_orig_dist = _angle_dist_between_rigid(
+        want_trans, orig_trans, angle_units="deg"
+    )
+    got_want_angles, got_want_dist = _angle_dist_between_rigid(
+        got_trans, want_trans, angle_units="deg"
+    )
+    got_orig_angles, got_orig_dist = _angle_dist_between_rigid(
+        got_trans, orig_trans, angle_units="deg"
+    )
+    assert_allclose(got_want_dist, 0.0, atol=1e-6)
+    assert_allclose(got_orig_dist, 0.0, atol=1e-6)
     for key in ("mag", "grad"):
         # imb_cals value
         p = pick_types(raw.info, meg=key, exclude=())

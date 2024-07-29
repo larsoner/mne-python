@@ -1,43 +1,44 @@
 # Authors: Denis Engemann <denis.engemann@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-from collections import Counter
-from functools import reduce, partial
-from io import BytesIO
 import os
+from collections import Counter
+from functools import partial, reduce
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
+import pytest
 from numpy.testing import (
+    assert_allclose,
     assert_array_almost_equal,
     assert_array_equal,
-    assert_allclose,
     assert_equal,
 )
-import pytest
 
 import mne
-from mne.datasets import testing
-from mne.io import read_raw_fif, read_raw_bti
+from mne import pick_info, pick_types
 from mne._fiff._digitization import _make_bti_dig_points
+from mne._fiff.constants import FIFF
+from mne.datasets import testing
+from mne.io import read_raw_bti, read_raw_fif
 from mne.io.bti.bti import (
-    _read_config,
-    _read_head_shape,
-    _read_bti_header,
-    _get_bti_dev_t,
+    _check_nan_dev_head_t,
+    _convert_coil_trans,
     _correct_trans,
+    _get_bti_dev_t,
     _get_bti_info,
     _loc_to_coil_trans,
-    _convert_coil_trans,
-    _check_nan_dev_head_t,
+    _read_bti_header,
+    _read_config,
+    _read_head_shape,
     _rename_channels,
 )
 from mne.io.tests.test_raw import _test_raw_reader
-from mne._fiff.constants import FIFF
-from mne import pick_types, pick_info
-from mne.utils import assert_dig_allclose
 from mne.transforms import Transform, combine_transforms, invert_transform
+from mne.utils import assert_dig_allclose
 
 base_dir = Path(__file__).parent / "data"
 
@@ -154,16 +155,16 @@ def test_raw(pdf, config, hs, exported, tmp_path):
     )
     assert len(ex.info["dig"]) in (3563, 5154)
     assert_dig_allclose(ex.info, ra.info, limit=100)
-    coil1, coil2 = [
+    coil1, coil2 = (
         np.concatenate([d["loc"].flatten() for d in r_.info["chs"][:NCH]])
         for r_ in (ra, ex)
-    ]
+    )
     assert_array_almost_equal(coil1, coil2, 7)
 
-    loc1, loc2 = [
+    loc1, loc2 = (
         np.concatenate([d["loc"].flatten() for d in r_.info["chs"][:NCH]])
         for r_ in (ra, ex)
-    ]
+    )
     assert_allclose(loc1, loc2)
 
     assert_allclose(ra[:NCH][0], ex[:NCH][0])

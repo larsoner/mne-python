@@ -5,18 +5,19 @@
 #          Marijn van Vliet <w.m.vanvliet@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-from inspect import isgenerator
 from collections import namedtuple
+from inspect import isgenerator
 
 import numpy as np
 from scipy import linalg, sparse, stats
 
-from ..source_estimate import SourceEstimate
+from .._fiff.pick import _picks_to_idx, pick_info, pick_types
 from ..epochs import BaseEpochs
 from ..evoked import Evoked, EvokedArray
-from ..utils import logger, _reject_data_segments, warn, fill_doc
-from .._fiff.pick import pick_types, pick_info, _picks_to_idx
+from ..source_estimate import SourceEstimate
+from ..utils import _reject_data_segments, fill_doc, logger, warn
 
 
 def linear_regression(inst, design_matrix, names=None):
@@ -59,7 +60,7 @@ def linear_regression(inst, design_matrix, names=None):
         ``(n_channels, n_timepoints)``.
     """
     if names is None:
-        names = ["x%i" % i for i in range(design_matrix.shape[1])]
+        names = [f"x{i}" for i in range(design_matrix.shape[1])]
 
     if isinstance(inst, BaseEpochs):
         picks = pick_types(
@@ -74,9 +75,9 @@ def linear_regression(inst, design_matrix, names=None):
             exclude=["bads"],
         )
         if [inst.ch_names[p] for p in picks] != inst.ch_names:
-            warn("Fitting linear model to non-data or bad channels. " "Check picking")
+            warn("Fitting linear model to non-data or bad channels. Check picking")
         msg = "Fitting linear model to epochs"
-        data = inst.get_data()
+        data = inst.get_data(copy=False)
         out = EvokedArray(np.zeros(data.shape[1:]), inst.info, inst.tmin)
     elif isgenerator(inst):
         msg = "Fitting linear model to source estimates (generator input)"
@@ -87,10 +88,8 @@ def linear_regression(inst, design_matrix, names=None):
         out = inst[0]
         data = np.array([i.data for i in inst])
     else:
-        raise ValueError("Input must be epochs or iterable of source " "estimates")
-    logger.info(
-        msg + ", (%s targets, %s regressors)" % (np.prod(data.shape[1:]), len(names))
-    )
+        raise ValueError("Input must be epochs or iterable of source estimates")
+    logger.info(msg + f", ({np.prod(data.shape[1:])} targets, {len(names)} regressors)")
     lm_params = _fit_lm(data, design_matrix, names)
     lm = namedtuple("lm", "beta stderr t_val p_val mlog10_p_val")
     lm_fits = {}
@@ -117,7 +116,7 @@ def _fit_lm(data, design_matrix, names):
 
     if n_samples != n_rows:
         raise ValueError(
-            "Number of rows in design matrix must be equal " "to number of observations"
+            "Number of rows in design matrix must be equal to number of observations"
         )
     if n_predictors != len(names):
         raise ValueError(
@@ -265,7 +264,7 @@ def linear_regression_raw(
     """
     if isinstance(solver, str):
         if solver not in {"cholesky"}:
-            raise ValueError("No such solver: {}".format(solver))
+            raise ValueError(f"No such solver: {solver}")
         if solver == "cholesky":
 
             def solver(X, y):
@@ -360,7 +359,7 @@ def _prepare_rerp_preds(
     else:
         tmin_s = {cond: int(round(tmin.get(cond, -0.1) * sfreq)) for cond in conds}
     if isinstance(tmax, (float, int)):
-        tmax_s = {cond: int(round((tmax * sfreq)) + 1) for cond in conds}
+        tmax_s = {cond: int(round(tmax * sfreq) + 1) for cond in conds}
     else:
         tmax_s = {cond: int(round(tmax.get(cond, 1.0) * sfreq)) + 1 for cond in conds}
 
@@ -387,9 +386,9 @@ def _prepare_rerp_preds(
             covs = covariates[cond]
             if len(covs) != len(events):
                 error = (
-                    "Condition {0} from ``covariates`` is "
-                    "not the same length as ``events``"
-                ).format(cond)
+                    f"Condition {cond} from ``covariates`` is not the same length as "
+                    "``events``"
+                )
                 raise ValueError(error)
             onsets = -(events[np.where(covs != 0), 0] + tmin_)[0]
             v = np.asarray(covs)[np.nonzero(covs)].astype(float)

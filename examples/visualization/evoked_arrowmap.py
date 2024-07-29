@@ -20,14 +20,16 @@ References
 # Authors: Sheraz Khan <sheraz@khansheraz.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 # %%
 
 import numpy as np
+
 import mne
+from mne import read_evokeds
 from mne.datasets import sample
 from mne.datasets.brainstorm import bst_raw
-from mne import read_evokeds
 from mne.viz import plot_arrowmap
 
 print(__doc__)

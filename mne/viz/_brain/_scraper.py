@@ -1,3 +1,5 @@
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 import os
 import os.path as op
 
@@ -18,7 +20,8 @@ class _BrainScraper:
             # PyVista and matplotlib scrapers can just do the work
             if (not isinstance(brain, Brain)) or brain._closed:
                 continue
-            from matplotlib import animation, pyplot as plt
+            from matplotlib import animation
+            from matplotlib import pyplot as plt
             from sphinx_gallery.scrapers import matplotlib_scraper
 
             img = brain.screenshot(time_viewer=True)

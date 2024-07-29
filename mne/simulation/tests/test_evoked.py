@@ -1,47 +1,42 @@
 # Author: Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 from pathlib import Path
 
 import numpy as np
+import pytest
 from numpy.testing import (
+    assert_allclose,
     assert_array_almost_equal,
     assert_array_equal,
     assert_equal,
-    assert_allclose,
 )
-import pytest
 
 from mne import (
-    read_cov,
-    read_forward_solution,
-    convert_forward_solution,
-    pick_types_forward,
-    read_evokeds,
-    pick_types,
     EpochsArray,
     compute_covariance,
     compute_raw_covariance,
+    convert_forward_solution,
     pick_channels_cov,
+    pick_types,
+    pick_types_forward,
+    read_cov,
+    read_evokeds,
+    read_forward_solution,
 )
-from mne.datasets import testing
-from mne.simulation import simulate_sparse_stc, simulate_evoked, add_noise
-from mne.io import read_raw_fif
 from mne.cov import regularize, whiten_evoked
+from mne.datasets import testing
+from mne.io import read_raw_fif
+from mne.simulation import add_noise, simulate_evoked, simulate_sparse_stc
 from mne.utils import catch_logging
 
 data_path = testing.data_path(download=False)
 fwd_fname = data_path / "MEG" / "sample" / "sample_audvis_trunc-meg-eeg-oct-6-fwd.fif"
-raw_fname = (
-    Path(__file__).parent.parent.parent / "io" / "tests" / "data" / "test_raw.fif"
-)
-ave_fname = (
-    Path(__file__).parent.parent.parent / "io" / "tests" / "data" / "test-ave.fif"
-)
-cov_fname = (
-    Path(__file__).parent.parent.parent / "io" / "tests" / "data" / "test-cov.fif"
-)
+raw_fname = Path(__file__).parents[2] / "io" / "tests" / "data" / "test_raw.fif"
+ave_fname = Path(__file__).parents[2] / "io" / "tests" / "data" / "test-ave.fif"
+cov_fname = Path(__file__).parents[2] / "io" / "tests" / "data" / "test-cov.fif"
 
 
 @testing.requires_testing_data

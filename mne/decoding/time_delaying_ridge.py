@@ -3,17 +3,18 @@
 #          Ross Maddox <ross.maddox@rochester.edu>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import numpy as np
 from scipy import linalg
 from scipy.signal import fftconvolve
 from scipy.sparse.csgraph import laplacian
 
-from .base import BaseEstimator
 from ..cuda import _setup_cuda_fft_multiply_repeated
 from ..filter import next_fast_len
 from ..fixes import jit
-from ..utils import warn, ProgressBar, logger, _validate_type, _check_option
+from ..utils import ProgressBar, _check_option, _validate_type, logger, warn
+from .base import BaseEstimator
 
 
 def _compute_corrs(
@@ -39,8 +40,9 @@ def _compute_corrs(
     assert X.shape[:2] == y.shape[:2]
     len_trf = smax - smin
     len_x, n_epochs, n_ch_x = X.shape
-    len_y, n_epcohs, n_ch_y = y.shape
+    len_y, n_epochs_y, n_ch_y = y.shape
     assert len_x == len_y
+    assert n_epochs == n_epochs_y
 
     n_fft = next_fast_len(2 * X.shape[0] - 1)
 
@@ -59,7 +61,7 @@ def _compute_corrs(
     x_xt = np.zeros([n_ch_x * len_trf] * 2)
     x_y = np.zeros((len_trf, n_ch_x, n_ch_y), order="F")
     n = n_epochs * (n_ch_x * (n_ch_x + 1) // 2 + n_ch_x)
-    logger.info("Fitting %d epochs, %d channels" % (n_epochs, n_ch_x))
+    logger.info(f"Fitting {n_epochs} epochs, {n_ch_x} channels")
     pb = ProgressBar(n, mesg="Sample")
     count = 0
     pb.update(count)
@@ -156,12 +158,10 @@ def _compute_reg_neighbors(n_ch_x, n_delays, reg_type, method="direct", normed=F
     if isinstance(reg_type, str):
         reg_type = (reg_type,) * 2
     if len(reg_type) != 2:
-        raise ValueError("reg_type must have two elements, got %s" % (len(reg_type),))
+        raise ValueError(f"reg_type must have two elements, got {len(reg_type)}")
     for r in reg_type:
         if r not in known_types:
-            raise ValueError(
-                "reg_type entries must be one of %s, got %s" % (known_types, r)
-            )
+            raise ValueError(f"reg_type entries must be one of {known_types}, got {r}")
     reg_time = reg_type[0] == "laplacian" and n_delays > 1
     reg_chs = reg_type[1] == "laplacian" and n_ch_x > 1
     if not reg_time and not reg_chs:
@@ -289,7 +289,7 @@ class TimeDelayingRidge(BaseEstimator):
         edge_correction=True,
     ):
         if tmin > tmax:
-            raise ValueError("tmin must be <= tmax, got %s and %s" % (tmin, tmax))
+            raise ValueError(f"tmin must be <= tmax, got {tmin} and {tmax}")
         self.tmin = float(tmin)
         self.tmax = float(tmax)
         self.sfreq = float(sfreq)

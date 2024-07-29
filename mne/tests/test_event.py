@@ -2,50 +2,49 @@
 #         Eric Larson <larson.eric.d@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 import os
 from pathlib import Path
 
 import numpy as np
+import pytest
 from numpy.testing import (
+    assert_allclose,
     assert_array_almost_equal,
     assert_array_equal,
     assert_equal,
-    assert_allclose,
 )
-import pytest
 
 from mne import (
-    read_events,
-    write_events,
-    make_fixed_length_events,
-    find_events,
-    pick_events,
-    find_stim_steps,
-    pick_channels,
-    read_evokeds,
-    Epochs,
-    create_info,
-    compute_raw_covariance,
     Annotations,
+    Epochs,
+    compute_raw_covariance,
     count_events,
-)
-from mne.io import read_raw_fif, RawArray
-from mne.event import (
-    define_target_events,
-    merge_events,
-    AcqParserFIF,
-    shift_time_events,
-    match_event_names,
+    create_info,
+    find_events,
+    find_stim_steps,
+    make_fixed_length_events,
+    pick_channels,
+    pick_events,
+    read_events,
+    read_evokeds,
+    write_events,
 )
 from mne.datasets import testing
+from mne.event import (
+    AcqParserFIF,
+    define_target_events,
+    match_event_names,
+    merge_events,
+    shift_time_events,
+)
+from mne.io import RawArray, read_raw_fif
 
-base_dir = Path(__file__).parent.parent / "io" / "tests" / "data"
+base_dir = Path(__file__).parents[1] / "io" / "tests" / "data"
 fname = base_dir / "test-eve.fif"
 fname_raw = base_dir / "test_raw.fif"
 fname_gz = base_dir / "test-eve.fif.gz"
 fname_1 = base_dir / "test-1-eve.fif"
-fname_txt = base_dir / "test-eve.eve"
-fname_txt_1 = base_dir / "test-eve-1.eve"
 fname_c_annot = base_dir / "test_raw-annot.fif"
 
 # for testing Elekta averager
@@ -221,7 +220,7 @@ def test_find_events():
     raw = read_raw_fif(raw_fname, preload=True)
     # let's test the defaulting behavior while we're at it
     extra_ends = ["", "_1"]
-    orig_envs = [os.getenv("MNE_STIM_CHANNEL%s" % s) for s in extra_ends]
+    orig_envs = [os.getenv(f"MNE_STIM_CHANNEL{s}") for s in extra_ends]
     os.environ["MNE_STIM_CHANNEL"] = "STI 014"
     if "MNE_STIM_CHANNEL_1" in os.environ:
         del os.environ["MNE_STIM_CHANNEL_1"]
@@ -372,7 +371,7 @@ def test_find_events():
     # put back the env vars we trampled on
     for s, o in zip(extra_ends, orig_envs):
         if o is not None:
-            os.environ["MNE_STIM_CHANNEL%s" % s] = o
+            os.environ[f"MNE_STIM_CHANNEL{s}"] = o
 
     # Test with list of stim channels
     raw._data[stim_channel_idx, 1:101] = np.zeros(100)

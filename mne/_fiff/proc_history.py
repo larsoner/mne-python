@@ -1,28 +1,29 @@
 # Authors: Denis A. Engemann <denis.engemann@gmail.com>
 #          Eric Larson <larson.eric.d@gmail.com>
-# License: Simplified BSD
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import numpy as np
 
-from .open import read_tag, fiff_open
+from ..fixes import _csc_array_cast
+from ..utils import _check_fname, warn
+from .constants import FIFF
+from .open import fiff_open, read_tag
+from .tag import _float_item, _int_item, find_tag
 from .tree import dir_tree_find
 from .write import (
-    start_block,
+    _safe_name_list,
     end_block,
-    write_int,
+    start_block,
     write_float,
-    write_string,
     write_float_matrix,
-    write_int_matrix,
     write_float_sparse,
     write_id,
+    write_int,
+    write_int_matrix,
     write_name_list_sanitized,
-    _safe_name_list,
+    write_string,
 )
-from .tag import find_tag, _int_item, _float_item
-from .constants import FIFF
-from ..fixes import _csc_matrix_cast
-from ..utils import warn, _check_fname
 
 _proc_keys = [
     "parent_file_id",
@@ -104,7 +105,7 @@ def _read_proc_history(fid, tree):
                         record[key] = cast(tag.data)
                         break
                 else:
-                    warn("Unknown processing history item %s" % kind)
+                    warn(f"Unknown processing history item {kind}")
             record["max_info"] = _read_maxfilter_record(fid, proc_record)
             iass = dir_tree_find(proc_record, FIFF.FIFFB_IAS)
             if len(iass) > 0:
@@ -197,7 +198,7 @@ _sss_ctc_ids = (
     FIFF.FIFF_DECOUPLER_MATRIX,
 )
 _sss_ctc_writers = (write_id, write_int, write_string, write_float_sparse)
-_sss_ctc_casters = (dict, np.array, str, _csc_matrix_cast)
+_sss_ctc_casters = (dict, np.array, str, _csc_array_cast)
 
 _sss_cal_keys = ("cal_chans", "cal_corrs")
 _sss_cal_ids = (FIFF.FIFF_SSS_CAL_CHANS, FIFF.FIFF_SSS_CAL_CORRS)
@@ -211,7 +212,7 @@ def _read_ctc(fname):
     f, tree, _ = fiff_open(fname)
     with f as fid:
         sss_ctc = _read_maxfilter_record(fid, tree)["sss_ctc"]
-        bad_str = "Invalid cross-talk FIF: %s" % fname
+        bad_str = f"Invalid cross-talk FIF: {fname}"
         if len(sss_ctc) == 0:
             raise ValueError(bad_str)
         node = dir_tree_find(tree, FIFF.FIFFB_DATA_CORRECTION)[0]

@@ -11,10 +11,15 @@ Time-Frequency
 .. currentmodule:: mne.time_frequency
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    AverageTFR
+   AverageTFRArray
+   BaseTFR
    EpochsTFR
+   EpochsTFRArray
+   RawTFR
+   RawTFRArray
    CrossSpectralDensity
    Spectrum
    SpectrumArray
@@ -24,7 +29,7 @@ Time-Frequency
 Functions that operate on mne-python objects:
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    csd_tfr
    csd_fourier
@@ -43,7 +48,7 @@ Functions that operate on mne-python objects:
 Functions that operate on ``np.ndarray`` objects:
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    csd_array_fourier
    csd_array_multitaper
@@ -70,7 +75,7 @@ Functions that operate on ``np.ndarray`` objects:
 .. currentmodule:: mne.time_frequency.tfr
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    cwt
    morlet

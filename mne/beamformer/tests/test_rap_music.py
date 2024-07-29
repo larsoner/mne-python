@@ -2,11 +2,12 @@
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-import pytest
 import numpy as np
-from scipy import linalg
+import pytest
 from numpy.testing import assert_allclose
+from scipy import linalg
 
 import mne
 from mne.beamformer import rap_music, trap_music
@@ -14,7 +15,6 @@ from mne.cov import regularize
 from mne.datasets import testing
 from mne.minimum_norm.tests.test_inverse import assert_var_exp_log
 from mne.utils import catch_logging
-
 
 data_path = testing.data_path(download=False)
 fname_ave = data_path / "MEG" / "sample" / "sample_audvis-ave.fif"
@@ -50,9 +50,7 @@ def simu_data(evoked, forward, noise_cov, n_dipoles, times, nave=1):
     # Generate the two dipoles data
     mu, sigma = 0.1, 0.005
     s1 = (
-        1
-        / (sigma * np.sqrt(2 * np.pi))
-        * np.exp(-((times - mu) ** 2) / (2 * sigma**2))
+        1 / (sigma * np.sqrt(2 * np.pi)) * np.exp(-((times - mu) ** 2) / (2 * sigma**2))
     )
 
     mu, sigma = 0.075, 0.008

@@ -2,77 +2,78 @@
 #            Stefan Appelhoff <stefan.appelhoff@mailbox.org>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import pickle
-from datetime import datetime, timedelta, timezone, date
+import string
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-import pytest
 import numpy as np
-from numpy.testing import assert_array_equal, assert_allclose
+import pytest
+from numpy.testing import assert_allclose, assert_array_equal
 from scipy import sparse
-import string
 
 from mne import (
-    Epochs,
-    read_events,
-    pick_info,
-    pick_types,
     Annotations,
-    read_evokeds,
+    Epochs,
+    compute_covariance,
     make_forward_solution,
     make_sphere_model,
-    setup_volume_source_space,
-    write_forward_solution,
-    read_forward_solution,
-    write_cov,
+    pick_info,
+    pick_types,
     read_cov,
     read_epochs,
-    compute_covariance,
-)
-from mne.channels import (
-    read_polhemus_fastscan,
-    make_standard_montage,
-    equalize_channels,
-)
-from mne.event import make_fixed_length_events
-from mne.datasets import testing
-from mne.io import read_raw_fif, BaseRaw, read_raw_ctf, RawArray
-from mne._fiff.tag import _coil_trans_to_loc, _loc_to_coil_trans
-from mne._fiff.proj import Projection
-from mne._fiff.constants import FIFF
-from mne._fiff.write import _generate_meas_id, DATE_NONE
-from mne._fiff.meas_info import (
-    Info,
-    create_info,
-    read_fiducials,
-    write_fiducials,
-    read_info,
-    write_info,
-    _merge_info,
-    _force_update_info,
-    RAW_INFO_FIELDS,
-    _bad_chans_comp,
-    _get_valid_units,
-    anonymize_info,
-    _stamp_to_dt,
-    _dt_to_stamp,
-    _add_timedelta_to_stamp,
-    _read_extended_ch_info,
-    MNEBadsList,
-)
-from mne.minimum_norm import (
-    make_inverse_operator,
-    write_inverse_operator,
-    read_inverse_operator,
-    apply_inverse,
+    read_events,
+    read_evokeds,
+    read_forward_solution,
+    setup_volume_source_space,
+    write_cov,
+    write_forward_solution,
 )
 from mne._fiff import meas_info
-from mne._fiff._digitization import _make_dig_points, DigPoint
+from mne._fiff._digitization import DigPoint, _make_dig_points
+from mne._fiff.constants import FIFF
+from mne._fiff.meas_info import (
+    RAW_INFO_FIELDS,
+    Info,
+    MNEBadsList,
+    _add_timedelta_to_stamp,
+    _bad_chans_comp,
+    _dt_to_stamp,
+    _force_update_info,
+    _get_valid_units,
+    _merge_info,
+    _read_extended_ch_info,
+    _stamp_to_dt,
+    anonymize_info,
+    create_info,
+    read_fiducials,
+    read_info,
+    write_fiducials,
+    write_info,
+)
+from mne._fiff.proj import Projection
+from mne._fiff.tag import _coil_trans_to_loc, _loc_to_coil_trans
+from mne._fiff.write import DATE_NONE, _generate_meas_id
+from mne.channels import (
+    equalize_channels,
+    make_standard_montage,
+    read_polhemus_fastscan,
+)
+from mne.datasets import testing
+from mne.event import make_fixed_length_events
+from mne.io import BaseRaw, RawArray, read_raw_ctf, read_raw_fif
+from mne.minimum_norm import (
+    apply_inverse,
+    make_inverse_operator,
+    read_inverse_operator,
+    write_inverse_operator,
+)
 from mne.transforms import Transform
-from mne.utils import catch_logging, assert_object_equal, _empty_hash, _record_warnings
+from mne.utils import _empty_hash, _record_warnings, assert_object_equal, catch_logging
 
-root_dir = Path(__file__).parent.parent.parent
+root_dir = Path(__file__).parents[2]
 fiducials_fname = root_dir / "data" / "fsaverage" / "fsaverage-fiducials.fif"
 base_dir = root_dir / "io" / "tests" / "data"
 raw_fname = base_dir / "test_raw.fif"
@@ -349,9 +350,11 @@ def test_read_write_info(tmp_path):
 @testing.requires_testing_data
 def test_dir_warning():
     """Test that trying to read a bad filename emits a warning before an error."""
-    with pytest.raises(OSError, match="directory"):
-        with pytest.warns(RuntimeWarning, match="foo"):
-            read_info(ctf_fname)
+    with (
+        pytest.raises(OSError, match="directory"),
+        pytest.warns(RuntimeWarning, match="does not conform"),
+    ):
+        read_info(ctf_fname)
 
 
 def test_io_dig_points(tmp_path):
@@ -540,9 +543,9 @@ def test_check_consistency():
     idx = 0
     ch = info["chs"][idx]
     for key, bad, match in (
-        ("ch_name", 1.0, "not a string"),
+        ("ch_name", 1.0, "must be an instance"),
         ("loc", np.zeros(15), "12 elements"),
-        ("cal", np.ones(1), "float or int"),
+        ("cal", np.ones(1), "numeric"),
     ):
         info._check_consistency()  # okay
         old = ch[key]
@@ -589,7 +592,7 @@ def _test_anonymize_info(base_info):
             his_id="foobar",
             last_name="bar",
             first_name="bar",
-            birthday=(1987, 4, 8),
+            birthday=date(1987, 4, 8),
             sex=0,
             hand=1,
         )
@@ -613,7 +616,7 @@ def _test_anonymize_info(base_info):
     # this bday is 3653 days different. the change in day is due to a
     # different number of leap days between 1987 and 1977 than between
     # 2010 and 2000.
-    exp_info["subject_info"]["birthday"] = (1977, 4, 7)
+    exp_info["subject_info"]["birthday"] = date(1977, 4, 7)
     exp_info["meas_date"] = default_anon_dos
     exp_info._unlocked = False
 
@@ -641,7 +644,7 @@ def _test_anonymize_info(base_info):
     # exp 3 tests is a supplied daysback
     delta_t_2 = timedelta(days=43)
     with exp_info_3._unlock():
-        exp_info_3["subject_info"]["birthday"] = (1987, 2, 24)
+        exp_info_3["subject_info"]["birthday"] = date(1987, 2, 24)
         exp_info_3["meas_date"] = meas_date - delta_t_2
     for key in ("file_id", "meas_id"):
         value = exp_info_3.get(key)
@@ -800,23 +803,23 @@ def test_csr_csc(tmp_path):
     sss_ctc = info["proc_history"][0]["max_info"]["sss_ctc"]
     ct = sss_ctc["decoupler"].copy()
     # CSC
-    assert isinstance(ct, sparse.csc_matrix)
+    assert isinstance(ct, sparse.csc_array)
     fname = tmp_path / "test.fif"
     write_info(fname, info)
     info_read = read_info(fname)
     ct_read = info_read["proc_history"][0]["max_info"]["sss_ctc"]["decoupler"]
-    assert isinstance(ct_read, sparse.csc_matrix)
+    assert isinstance(ct_read, sparse.csc_array)
     assert_array_equal(ct_read.toarray(), ct.toarray())
     # Now CSR
     csr = ct.tocsr()
-    assert isinstance(csr, sparse.csr_matrix)
+    assert isinstance(csr, sparse.csr_array)
     assert_array_equal(csr.toarray(), ct.toarray())
     info["proc_history"][0]["max_info"]["sss_ctc"]["decoupler"] = csr
     fname = tmp_path / "test1.fif"
     write_info(fname, info)
     info_read = read_info(fname)
     ct_read = info_read["proc_history"][0]["max_info"]["sss_ctc"]["decoupler"]
-    assert isinstance(ct_read, sparse.csc_matrix)  # this gets cast to CSC
+    assert isinstance(ct_read, sparse.csc_array)  # this gets cast to CSC
     assert_array_equal(ct_read.toarray(), ct.toarray())
 
 
@@ -857,12 +860,19 @@ def test_field_round_trip(tmp_path):
             info[key] = _generate_meas_id()
         info["device_info"] = dict(type="a", model="b", serial="c", site="d")
         info["helium_info"] = dict(
-            he_level_raw=1.0, helium_level=2.0, orig_file_guid="e", meas_date=(1, 2)
+            he_level_raw=1.0,
+            helium_level=2.0,
+            orig_file_guid="e",
+            meas_date=_stamp_to_dt((1, 2)),
         )
     fname = tmp_path / "temp-info.fif"
     write_info(fname, info)
     info_read = read_info(fname)
     assert_object_equal(info, info_read)
+    info["helium_info"]["meas_date"] = (1, 2)
+    with pytest.raises(TypeError, match="datetime"):
+        # trigger the check
+        info["helium_info"] = info["helium_info"]
 
 
 def test_equalize_channels():
@@ -893,18 +903,17 @@ def test_repr_html():
         info["projs"] = []
     assert "Projections" not in info._repr_html_()
     info["bads"] = []
-    assert "None" in info._repr_html_()
+    assert "Bad " not in info._repr_html_()
     info["bads"] = ["MEG 2443", "EEG 053"]
-    assert "MEG 2443" in info._repr_html_()
-    assert "EEG 053" in info._repr_html_()
+    assert "Bad " in info._repr_html_()  # 1 for each channel type
 
     html = info._repr_html_()
-    for ch in [
-        "204 Gradiometers",
-        "102 Magnetometers",
-        "9 Stimulus",
-        "60 EEG",
-        "1 EOG",
+    for ch in [  # good channel counts
+        "203",  # grad
+        "102",  # mag
+        "9",  # stim
+        "59",  # eeg
+        "1",  # eog
     ]:
         assert ch in html
 

@@ -3,17 +3,18 @@
 #          Stefan Appelhoff <stefan.appelhoff@mailbox.org>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-from contextlib import redirect_stdout
-from io import StringIO
 import math
 import os
+import re
+from contextlib import redirect_stdout
+from io import StringIO
 from os import path as op
 from pathlib import Path
-import re
 
-import pytest
 import numpy as np
+import pytest
 from numpy.testing import (
     assert_allclose,
     assert_array_almost_equal,
@@ -22,26 +23,25 @@ from numpy.testing import (
 )
 
 import mne
-from mne import concatenate_raws, create_info, Annotations, pick_types
-from mne.datasets import testing
-from mne.fixes import _numpy_h5py_dep
-from mne.io import read_raw_fif, RawArray, BaseRaw
-from mne.io.base import _get_scaling
-from mne._fiff.meas_info import Info, _writing_info_hdf5, _get_valid_units
-from mne._fiff._digitization import _dig_kind_dict, DigPoint
+from mne import Annotations, concatenate_raws, create_info, pick_types
+from mne._fiff._digitization import DigPoint, _dig_kind_dict
+from mne._fiff.constants import FIFF
+from mne._fiff.meas_info import Info, _get_valid_units, _writing_info_hdf5
 from mne._fiff.pick import _ELECTRODE_CH_TYPES, _FNIRS_CH_TYPES_SPLIT
-from mne.utils import (
-    _TempDir,
-    catch_logging,
-    _raw_annot,
-    _stamp_to_dt,
-    object_diff,
-    check_version,
-    _import_h5io_funcs,
-)
 from mne._fiff.proj import Projection
 from mne._fiff.utils import _mult_cal_one
-from mne._fiff.constants import FIFF
+from mne.io import BaseRaw, RawArray, read_raw_fif
+from mne.io.base import _get_scaling
+from mne.transforms import Transform
+from mne.utils import (
+    _import_h5io_funcs,
+    _raw_annot,
+    _stamp_to_dt,
+    _TempDir,
+    catch_logging,
+    check_version,
+    object_diff,
+)
 
 raw_fname = op.join(
     op.dirname(__file__), "..", "..", "io", "tests", "data", "test_raw.fif"
@@ -334,7 +334,7 @@ def _test_raw_reader(
     assert meas_date is None or meas_date >= _stamp_to_dt((0, 0))
 
     # test repr_html
-    assert "Good channels" in raw.info._repr_html_()
+    assert "Channels" in raw._repr_html_()
 
     # test resetting raw
     if test_kwargs:
@@ -440,7 +440,7 @@ def _test_raw_reader(
     if check_version("h5io"):
         read_hdf5, write_hdf5 = _import_h5io_funcs()
         fname_h5 = op.join(tempdir, "info.h5")
-        with _writing_info_hdf5(raw.info), _numpy_h5py_dep():
+        with _writing_info_hdf5(raw.info):
             write_hdf5(fname_h5, raw.info)
             new_info = Info(read_hdf5(fname_h5))
         assert object_diff(new_info, raw.info) == ""
@@ -603,7 +603,6 @@ def _test_concat(reader, *args):
                 assert_allclose(data, raw1[:, :][0])
 
 
-@testing.requires_testing_data
 def test_time_as_index():
     """Test indexing of raw times."""
     raw = read_raw_fif(raw_fname)
@@ -764,7 +763,7 @@ def test_5839():
         )
         return raw
 
-    raw_A, raw_B = [raw_factory((x, 0)) for x in [0, 2]]
+    raw_A, raw_B = (raw_factory((x, 0)) for x in [0, 2])
     raw_A.append(raw_B)
 
     assert_array_equal(raw_A.annotations.onset, EXPECTED_ONSET)
@@ -1011,3 +1010,21 @@ def test_resamp_noop():
     data_before = raw.get_data()
     data_after = raw.resample(sfreq=raw.info["sfreq"]).get_data()
     assert_array_equal(data_before, data_after)
+
+
+def test_concatenate_raw_dev_head_t():
+    """Test concatenating raws with dev-head-t including nans."""
+    data = np.random.randn(3, 10)
+    info = create_info(3, 1000.0, ["mag", "grad", "grad"])
+    raw = RawArray(data, info)
+    raw.info["dev_head_t"] = Transform("meg", "head", np.eye(4))
+    raw.info["dev_head_t"]["trans"][0, 0] = np.nan
+    raw2 = raw.copy()
+    concatenate_raws([raw, raw2])
+
+
+def test_last_samp():
+    """Test that getting the last sample works."""
+    raw = read_raw_fif(raw_fname).crop(0, 0.1).load_data()
+    last_data = raw._data[:, [-1]]
+    assert_array_equal(raw[:, -1][0], last_data)

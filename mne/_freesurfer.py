@@ -3,31 +3,33 @@
 #          Eric Larson <larson.eric.d@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import os.path as op
-import numpy as np
 from gzip import GzipFile
 from pathlib import Path
 
+import numpy as np
+
 from ._fiff.constants import FIFF
 from ._fiff.meas_info import read_fiducials
+from .surface import _read_mri_surface, read_surface
 from .transforms import (
-    apply_trans,
-    invert_transform,
-    combine_transforms,
-    _ensure_trans,
-    read_ras_mni_t,
     Transform,
+    _ensure_trans,
+    apply_trans,
+    combine_transforms,
+    invert_transform,
+    read_ras_mni_t,
 )
-from .surface import read_surface, _read_mri_surface
 from .utils import (
-    verbose,
-    _validate_type,
     _check_fname,
     _check_option,
-    get_subjects_dir,
     _import_nibabel,
+    _validate_type,
+    get_subjects_dir,
     logger,
+    verbose,
 )
 
 
@@ -48,13 +50,17 @@ def _get_aseg(aseg, subject, subjects_dir):
     """Check that the anatomical segmentation file exists and load it."""
     nib = _import_nibabel("load aseg")
     subjects_dir = Path(get_subjects_dir(subjects_dir, raise_error=True))
-    if not aseg.endswith("aseg"):
-        raise RuntimeError(f'`aseg` file path must end with "aseg", got {aseg}')
-    aseg = _check_fname(
-        subjects_dir / subject / "mri" / (aseg + ".mgz"),
-        overwrite="read",
-        must_exist=True,
-    )
+    if aseg == "auto":  # use aparc+aseg if auto
+        aseg = _check_fname(
+            subjects_dir / subject / "mri" / "aparc+aseg.mgz",
+            overwrite="read",
+            must_exist=False,
+        )
+        if not aseg:  # if doesn't exist use wmparc
+            aseg = subjects_dir / subject / "mri" / "wmparc.mgz"
+    else:
+        aseg = subjects_dir / subject / "mri" / f"{aseg}.mgz"
+    _check_fname(aseg, overwrite="read", must_exist=True)
     aseg = nib.load(aseg)
     aseg_data = np.array(aseg.dataobj)
     return aseg, aseg_data
@@ -247,7 +253,7 @@ def get_volume_labels_from_aseg(mgz_fname, return_colors=False, atlas_ids=None):
     if atlas_ids is None:
         atlas_ids, colors = read_freesurfer_lut()
     elif return_colors:
-        raise ValueError("return_colors must be False if atlas_ids are " "provided")
+        raise ValueError("return_colors must be False if atlas_ids are provided")
     # restrict to the ones in the MRI, sorted by label name
     keep = np.isin(list(atlas_ids.values()), want)
     keys = sorted(
@@ -490,7 +496,7 @@ def estimate_head_mri_t(subject, subjects_dir=None, verbose=None):
     -------
     %(trans_not_none)s
     """
-    from .channels.montage import make_dig_montage, compute_native_head_t
+    from .channels.montage import compute_native_head_t, make_dig_montage
 
     subjects_dir = get_subjects_dir(subjects_dir, raise_error=True)
     lpa, nasion, rpa = get_mni_fiducials(subject, subjects_dir)
@@ -498,23 +504,6 @@ def estimate_head_mri_t(subject, subjects_dir=None, verbose=None):
         lpa=lpa["r"], nasion=nasion["r"], rpa=rpa["r"], coord_frame="mri"
     )
     return invert_transform(compute_native_head_t(montage))
-
-
-def _ensure_image_in_surface_RAS(image, subject, subjects_dir):
-    """Check if the image is in Freesurfer surface RAS space."""
-    nib = _import_nibabel("load a volume image")
-    if not isinstance(image, nib.spatialimages.SpatialImage):
-        image = nib.load(image)
-    image = nib.MGHImage(image.dataobj.astype(np.float32), image.affine)
-    fs_img = nib.load(op.join(subjects_dir, subject, "mri", "brain.mgz"))
-    if not np.allclose(image.affine, fs_img.affine, atol=1e-6):
-        raise RuntimeError(
-            "The `image` is not aligned to Freesurfer "
-            "surface RAS space. This space is required as "
-            "it is the space where the anatomical "
-            "segmentation and reconstructed surfaces are"
-        )
-    return image  # returns MGH image for header
 
 
 def _get_affine_from_lta_info(lines):
@@ -552,7 +541,7 @@ def read_lta(fname, verbose=None):
         The affine transformation described by the lta file.
     """
     _check_fname(fname, "read", must_exist=True)
-    with open(fname, "r") as fid:
+    with open(fname) as fid:
         lines = fid.readlines()
     # 0 is linear vox2vox, 1 is linear ras2ras
     trans_type = int(lines[0].split("=")[1].strip()[0])
@@ -605,7 +594,7 @@ def read_talxfm(subject, subjects_dir=None, verbose=None):
     if not path.is_file():
         path = subjects_dir / subject / "mri" / "T1.mgz"
     if not path.is_file():
-        raise OSError("mri not found: %s" % path)
+        raise OSError(f"mri not found: {path}")
     _, _, mri_ras_t, _, _ = _read_mri_info(path)
     mri_mni_t = combine_transforms(mri_ras_t, ras_mni_t, "mri", "mni_tal")
     return mri_mni_t
@@ -713,7 +702,7 @@ def _get_lut(fname=None):
         ("A", "<i8"),
     ]
     lut = {d[0]: list() for d in dtype}
-    with open(fname, "r") as fid:
+    with open(fname) as fid:
         for line in fid:
             line = line.strip()
             if line.startswith("#") or not line:
@@ -850,7 +839,7 @@ def _get_skull_surface(surf, subject, subjects_dir, bem=None, verbose=None):
 
 
 def _estimate_talxfm_rigid(subject, subjects_dir):
-    from .coreg import fit_matched_points, _trans_from_params
+    from .coreg import _trans_from_params, fit_matched_points
 
     xfm = read_talxfm(subject, subjects_dir)
     # XYZ+origin + halfway

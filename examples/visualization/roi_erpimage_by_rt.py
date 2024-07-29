@@ -18,12 +18,13 @@ and the trials are plotted, sorting by response time.
 # Authors: Jona Sassenhagen <jona.sassenhagen@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 # %%
 
 import mne
-from mne.event import define_target_events
 from mne.channels import make_1020_channel_selections
+from mne.event import define_target_events
 
 print(__doc__)
 

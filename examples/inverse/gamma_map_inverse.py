@@ -11,6 +11,7 @@ See :footcite:`WipfNagarajan2009` for details.
 #         Daniel Strohmeier <daniel.strohmeier@tu-ilmenau.de>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 # %%
 
@@ -20,12 +21,10 @@ import mne
 from mne.datasets import sample
 from mne.inverse_sparse import gamma_map, make_stc_from_dipoles
 from mne.viz import (
-    plot_sparse_source_estimates,
-    plot_dipole_locations,
     plot_dipole_amplitudes,
+    plot_dipole_locations,
+    plot_sparse_source_estimates,
 )
-
-print(__doc__)
 
 data_path = sample.data_path()
 subjects_dir = data_path / "subjects"

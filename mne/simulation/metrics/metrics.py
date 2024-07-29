@@ -3,14 +3,15 @@
 #          Kostiantyn Maksymenko <kostiantyn.maksymenko@gmail.com>
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #
-# License: BSD (3-clause)
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 from functools import partial
 
 import numpy as np
 from scipy.spatial.distance import cdist
 
-from ...utils import _check_option, fill_doc, _validate_type
+from ...utils import _check_option, _validate_type, fill_doc
 
 
 def _check_stc(stc1, stc2):
@@ -72,7 +73,7 @@ def _uniform_stc(stc1, stc2):
     if len(stc1.vertices) != len(stc2.vertices):
         raise ValueError(
             "Data in stcs must have the same number of vertices "
-            "components. Got %d != %d." % (len(stc1.vertices), len(stc2.vertices))
+            f"components. Got {len(stc1.vertices)} != {len(stc2.vertices)}."
         )
     idx_start1 = 0
     idx_start2 = 0
@@ -178,7 +179,7 @@ def _check_threshold(threshold):
     if isinstance(threshold, str):
         if not threshold.endswith("%"):
             raise ValueError(
-                "Threshold if a string must end with " '"%%". Got %s.' % threshold
+                f'Threshold if a string must end with "%". Got {threshold}.'
             )
         threshold = float(threshold[:-1]) / 100.0
     threshold = float(threshold)
@@ -439,9 +440,7 @@ def _prepare_ppe_sd(stc_true, stc_est, src, threshold="50%"):
             n_dipoles += len(v)
             r_true = src[i]["rr"][v]
     if n_dipoles != 1:
-        raise ValueError(
-            "True source must contain only one dipole, got %d." % n_dipoles
-        )
+        raise ValueError(f"True source must contain only one dipole, got {n_dipoles}.")
 
     _, stc_est = _thresholding(None, stc_est, threshold)
 

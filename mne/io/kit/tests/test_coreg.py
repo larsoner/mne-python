@@ -1,12 +1,12 @@
 # Authors: Christian Brodbeck <christianbrodbeck@nyu.edu>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-import pickle
 from pathlib import Path
 
-import pytest
 import numpy as np
+import pytest
 from numpy.testing import assert_array_equal
 
 from mne.io.kit import read_mrk
@@ -26,19 +26,6 @@ def test_io_mrk(tmp_path):
 
     pts_2 = read_mrk(path)
     assert_array_equal(pts, pts_2, "read/write mrk to text")
-
-    # pickle (deprecated)
-    fname = tmp_path / "mrk.pickled"
-    with open(fname, "wb") as fid:
-        pickle.dump(dict(mrk=pts), fid)
-    with pytest.warns(FutureWarning, match="unsafe"):
-        pts_2 = read_mrk(fname)
-    assert_array_equal(pts_2, pts, "pickle mrk")
-    with open(fname, "wb") as fid:
-        pickle.dump(dict(), fid)
-    with pytest.warns(FutureWarning, match="unsafe"):
-        with pytest.raises(ValueError, match="does not contain"):
-            read_mrk(fname)
 
     # unsupported extension
     fname = tmp_path / "file.ext"

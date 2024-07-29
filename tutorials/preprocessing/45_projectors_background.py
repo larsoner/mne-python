@@ -14,13 +14,17 @@ We'll start by importing the Python modules we need; we'll also define a short
 function to make it easier to make several plots that look similar:
 """
 
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 # %%
 
 import os
-import numpy as np
+
 import matplotlib.pyplot as plt
+import numpy as np
 from mpl_toolkits.mplot3d import Axes3D  # noqa
 from scipy.linalg import svd
+
 import mne
 
 
@@ -368,7 +372,7 @@ for proj in (False, True):
     with mne.viz.use_browser_backend("matplotlib"):
         fig = mags.plot(butterfly=True, proj=proj)
     fig.subplots_adjust(top=0.9)
-    fig.suptitle("proj={}".format(proj), size="xx-large", weight="bold")
+    fig.suptitle(f"proj={proj}", size="xx-large", weight="bold")
 
 # %%
 # Additional ways of visualizing projectors are covered in the tutorial
@@ -439,7 +443,7 @@ for data, title in zip([mags, mags_ecg], ["Without", "With"]):
     with mne.viz.use_browser_backend("matplotlib"):
         fig = data.plot(butterfly=True, proj=True)
     fig.subplots_adjust(top=0.9)
-    fig.suptitle("{} ECG projector".format(title), size="xx-large", weight="bold")
+    fig.suptitle(f"{title} ECG projector", size="xx-large", weight="bold")
 
 # %%
 # When are projectors "applied"?

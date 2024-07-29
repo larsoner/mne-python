@@ -1,6 +1,7 @@
 # Authors: Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #          Martin Luessi <mluessi@nmr.mgh.harvard.edu>
-# License: Simplified BSD
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import numpy as np
 
@@ -10,11 +11,11 @@ from ..minimum_norm.inverse import _check_reference, _log_exp_var
 from ..utils import logger, verbose, warn
 from .mxne_inverse import (
     _check_ori,
+    _compute_residual,
+    _make_dipoles_sparse,
     _make_sparse_stc,
     _prepare_gain,
     _reapply_source_weighting,
-    _compute_residual,
-    _make_dipoles_sparse,
 )
 
 
@@ -80,7 +81,7 @@ def _gamma_map_opt(
 
     if n_sources % group_size != 0:
         raise ValueError(
-            "Number of sources has to be evenly dividable by the " "group size"
+            "Number of sources has to be evenly dividable by the group size"
         )
 
     n_active = n_sources
@@ -157,8 +158,8 @@ def _gamma_map_opt(
         breaking = err < tol or n_active == 0
         if len(gammas) != last_size or breaking:
             logger.info(
-                "Iteration: %d\t active set size: %d\t convergence: "
-                "%0.3e" % (itno, len(gammas), err)
+                f"Iteration: {itno}\t active set size: {len(gammas)}\t convergence: "
+                f"{err:.3e}"
             )
             last_size = len(gammas)
 

@@ -16,11 +16,12 @@ frequencies.
 # Author: Denis A. Engemann <denis.engemann@gmail.com>
 #         Victoria Peterson <victoriapeterson09@gmail.com>
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 # %%
 
-
 import matplotlib.pyplot as plt
+
 import mne
 from mne import Epochs
 from mne.datasets.fieldtrip_cmc import data_path
@@ -145,7 +146,7 @@ ssd_epochs = SSD(
         h_trans_bandwidth=1,
     ),
 )
-ssd_epochs.fit(X=epochs.get_data())
+ssd_epochs.fit(X=epochs.get_data(copy=False))
 
 # Plot topographies.
 pattern_epochs = mne.EvokedArray(data=ssd_epochs.patterns_[:4].T, info=ssd_epochs.info)

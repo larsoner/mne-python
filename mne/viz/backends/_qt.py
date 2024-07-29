@@ -4,123 +4,125 @@
 #          Eric Larson <larson.eric.d@gmail.com>
 #          Alex Rockhill <aprockhill@mailbox.org>
 #
-# License: Simplified BSD
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-from contextlib import contextmanager
 import os
 import platform
 import sys
 import weakref
+from contextlib import contextmanager
+
+# importing anything from qtpy forces a Qt API choice as a side effect, which is then
+# used by matplotlib and pyvistaqt
+from qtpy import API_NAME  # noqa: F401, isort: skip
 
 import pyvista
-from pyvistaqt.plotting import FileDialog, MainWindow
-from .renderer import _TimeInteraction
+from matplotlib.backends.backend_qtagg import FigureCanvas
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_qt5agg import FigureCanvas
-
+from pyvistaqt.plotting import FileDialog, MainWindow
 from qtpy.QtCore import (
+    QEvent,
+    QLibraryInfo,
+    QLocale,
+    QObject,
     Qt,
     QTimer,
-    QLocale,
-    QLibraryInfo,
-    QEvent,
     # non-object-based-abstraction-only, deprecate
     Signal,
-    QObject,
 )
-from qtpy.QtGui import QIcon, QCursor, QKeyEvent
+from qtpy.QtGui import QCursor, QIcon, QKeyEvent
 from qtpy.QtWidgets import (
+    QButtonGroup,
+    QCheckBox,
     QComboBox,
+    # non-object-based-abstraction-only, deprecate
+    QDockWidget,
+    QDoubleSpinBox,
+    QFileDialog,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QSlider,
-    QDoubleSpinBox,
-    QVBoxLayout,
-    QWidget,
-    QSizePolicy,
-    QProgressBar,
-    QScrollArea,
     QLayout,
-    QCheckBox,
-    QButtonGroup,
-    QRadioButton,
     QLineEdit,
-    QGridLayout,
-    QFileDialog,
-    QPushButton,
-    QMessageBox,
-    # non-object-based-abstraction-only, deprecate
-    QDockWidget,
-    QToolButton,
     QMenuBar,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QRadioButton,
+    QScrollArea,
+    QSizePolicy,
+    QSlider,
     QSpinBox,
     QStyle,
     QStyleOptionSlider,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ._pyvista import _PyVistaRenderer
-from ._pyvista import (
-    _close_3d_figure,  # noqa: F401
-    _check_3d_figure,  # noqa: F401
-    _close_all,  # noqa: F401
-    _set_3d_view,  # noqa: F401
-    _set_3d_title,  # noqa: F401
-    _take_3d_screenshot,  # noqa: F401
-    _is_mesa,  # noqa: F401
-)
+from ...fixes import _compare_version
+from ...utils import _check_option, get_config
+from ..utils import safe_event
 from ._abstract import (
-    _AbstractAppWindow,
-    _AbstractHBoxLayout,
-    _AbstractVBoxLayout,
-    _AbstractGridLayout,
-    _AbstractWidget,
-    _AbstractCanvas,
-    _AbstractPopup,
-    _AbstractLabel,
-    _AbstractButton,
-    _AbstractSlider,
-    _AbstractCheckBox,
-    _AbstractSpinBox,
-    _AbstractComboBox,
-    _AbstractRadioButtons,
-    _AbstractGroupBox,
-    _AbstractText,
-    _AbstractFileButton,
-    _AbstractPlayMenu,
-    _AbstractProgressBar,
-)
-from ._abstract import (
-    _AbstractDock,
-    _AbstractToolBar,
-    _AbstractMenuBar,
-    _AbstractStatusBar,
-    _AbstractLayout,
-    _AbstractWdgt,
-    _AbstractWindow,
-    _AbstractMplCanvas,
-    _AbstractPlayback,
-    _AbstractBrainMplCanvas,
-    _AbstractMplInterface,
-    _AbstractWidgetList,
     _AbstractAction,
+    _AbstractAppWindow,
+    _AbstractBrainMplCanvas,
+    _AbstractButton,
+    _AbstractCanvas,
+    _AbstractCheckBox,
+    _AbstractComboBox,
     _AbstractDialog,
+    _AbstractDock,
+    _AbstractFileButton,
+    _AbstractGridLayout,
+    _AbstractGroupBox,
+    _AbstractHBoxLayout,
     _AbstractKeyPress,
+    _AbstractLabel,
+    _AbstractLayout,
+    _AbstractMenuBar,
+    _AbstractMplCanvas,
+    _AbstractMplInterface,
+    _AbstractPlayback,
+    _AbstractPlayMenu,
+    _AbstractPopup,
+    _AbstractProgressBar,
+    _AbstractRadioButtons,
+    _AbstractSlider,
+    _AbstractSpinBox,
+    _AbstractStatusBar,
+    _AbstractText,
+    _AbstractToolBar,
+    _AbstractVBoxLayout,
+    _AbstractWdgt,
+    _AbstractWidget,
+    _AbstractWidgetList,
+    _AbstractWindow,
+)
+from ._pyvista import (
+    _check_3d_figure,  # noqa: F401
+    _close_3d_figure,  # noqa: F401
+    _close_all,  # noqa: F401
+    _is_mesa,  # noqa: F401
+    _PyVistaRenderer,
+    _set_3d_title,  # noqa: F401
+    _set_3d_view,  # noqa: F401
+    _take_3d_screenshot,  # noqa: F401
 )
 from ._utils import (
+    _ICONS_PATH,
+    _init_mne_qtapp,
+    _qt_app_exec,
+    _qt_detect_theme,
     _qt_disable_paint,
     _qt_get_stylesheet,
     _qt_is_dark,
-    _qt_detect_theme,
     _qt_raise_window,
-    _init_mne_qtapp,
-    _qt_app_exec,
     _qt_safe_window,
 )
-from ..utils import safe_event
-from ...utils import _check_option, get_config
-from ...fixes import _compare_version
-
+from .renderer import _TimeInteraction
 
 # Adapted from matplotlib
 if (
@@ -275,13 +277,13 @@ class _Button(QPushButton, _AbstractButton, _Widget, metaclass=_BaseWidget):
         self.setText(value)
         self.released.connect(callback)
         if icon:
-            self.setIcon(QIcon.fromTheme(icon))
+            self.setIcon(_qicon(icon))
 
     def _click(self):
         self.click()
 
     def _set_icon(self, icon):
-        self.setIcon(QIcon.fromTheme(icon))
+        self.setIcon(_qicon(icon))
 
 
 class _Slider(QSlider, _AbstractSlider, _Widget, metaclass=_BaseWidget):
@@ -473,16 +475,16 @@ class _PlayMenu(QVBoxLayout, _AbstractPlayMenu, _Widget, metaclass=_BaseWidget):
         self._slider.valueChanged.connect(callback)
         self._nav_hbox = QHBoxLayout()
         self._play_button = QPushButton()
-        self._play_button.setIcon(QIcon.fromTheme("play"))
+        self._play_button.setIcon(_qicon("play"))
         self._nav_hbox.addWidget(self._play_button)
         self._pause_button = QPushButton()
-        self._pause_button.setIcon(QIcon.fromTheme("pause"))
+        self._pause_button.setIcon(_qicon("pause"))
         self._nav_hbox.addWidget(self._pause_button)
         self._reset_button = QPushButton()
-        self._reset_button.setIcon(QIcon.fromTheme("reset"))
+        self._reset_button.setIcon(_qicon("reset"))
         self._nav_hbox.addWidget(self._reset_button)
         self._loop_button = QPushButton()
-        self._loop_button.setIcon(QIcon.fromTheme("restore"))
+        self._loop_button.setIcon(_qicon("restore"))
         self._loop_button.setStyleSheet("background-color : lightgray;")
         self._loop_button._checked = True
 
@@ -929,7 +931,7 @@ class _QtDialog(_AbstractDialog):
         callback,
         *,
         icon="Warning",
-        buttons=[],
+        buttons=(),
         modal=True,
         window=None,
     ):
@@ -1204,7 +1206,7 @@ class _QtDock(_AbstractDock, _QtLayout):
         desc,
         func,
         *,
-        filter=None,
+        filter_=None,
         initial_directory=None,
         save=False,
         is_directory=False,
@@ -1225,11 +1227,11 @@ class _QtDock(_AbstractDock, _QtLayout):
                 )
             elif save:
                 name = QFileDialog.getSaveFileName(
-                    parent=self._window, directory=initial_directory, filter=filter
+                    parent=self._window, directory=initial_directory, filter=filter_
                 )
             else:
                 name = QFileDialog.getOpenFileName(
-                    parent=self._window, directory=initial_directory, filter=filter
+                    parent=self._window, directory=initial_directory, filter=filter_
                 )
             name = name[0] if isinstance(name, tuple) else name
             # handle the cancel button
@@ -1416,8 +1418,8 @@ class _QtPlayback(_AbstractPlayback):
 
 class _QtMplInterface(_AbstractMplInterface):
     def _mpl_initialize(self):
-        from qtpy import QtWidgets
         from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+        from qtpy import QtWidgets
 
         self.canvas = FigureCanvasQTAgg(self.fig)
         FigureCanvasQTAgg.setSizePolicy(
@@ -1493,18 +1495,18 @@ class _QtWindow(_AbstractWindow):
         self._window.closeEvent = closeEvent
 
     def _window_load_icons(self):
-        self._icons["help"] = QIcon.fromTheme("help")
-        self._icons["play"] = QIcon.fromTheme("play")
-        self._icons["pause"] = QIcon.fromTheme("pause")
-        self._icons["reset"] = QIcon.fromTheme("reset")
-        self._icons["scale"] = QIcon.fromTheme("scale")
-        self._icons["clear"] = QIcon.fromTheme("clear")
-        self._icons["movie"] = QIcon.fromTheme("movie")
-        self._icons["restore"] = QIcon.fromTheme("restore")
-        self._icons["screenshot"] = QIcon.fromTheme("screenshot")
-        self._icons["visibility_on"] = QIcon.fromTheme("visibility_on")
-        self._icons["visibility_off"] = QIcon.fromTheme("visibility_off")
-        self._icons["folder"] = QIcon.fromTheme("folder")
+        self._icons["help"] = _qicon("help")
+        self._icons["play"] = _qicon("play")
+        self._icons["pause"] = _qicon("pause")
+        self._icons["reset"] = _qicon("reset")
+        self._icons["scale"] = _qicon("scale")
+        self._icons["clear"] = _qicon("clear")
+        self._icons["movie"] = _qicon("movie")
+        self._icons["restore"] = _qicon("restore")
+        self._icons["screenshot"] = _qicon("screenshot")
+        self._icons["visibility_on"] = _qicon("visibility_on")
+        self._icons["visibility_off"] = _qicon("visibility_off")
+        self._icons["folder"] = _qicon("folder")
 
     def _window_clean(self):
         self.figure._plotter = None
@@ -1843,3 +1845,10 @@ def _testing_context(interactive):
     finally:
         pyvista.OFF_SCREEN = orig_offscreen
         renderer.MNE_3D_BACKEND_TESTING = orig_testing
+
+
+def _qicon(name):
+    # Get icon from theme with a file fallback
+    return QIcon.fromTheme(
+        name, QIcon(str(_ICONS_PATH / "light" / "actions" / f"{name}.svg"))
+    )

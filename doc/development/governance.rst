@@ -69,7 +69,7 @@ BDFL
 ----
 
 The Project will have a BDFL (Benevolent Dictator for Life), who is currently
-Alexandre Gramfort. As Dictator, the BDFL has the authority to make all final
+Daniel McCloy. As Dictator, the BDFL has the authority to make all final
 decisions for The Project. As Benevolent, the BDFL, in practice, chooses to
 defer that authority to the consensus of the community discussion channels and
 the Steering Council (see below). It is expected, and in the past has been the
@@ -301,7 +301,7 @@ Substantial portions of this document were adapted from the
 <https://github.com/scipy/scipy/blob/main/doc/source/dev/governance.rst>`_,
 which in turn was adapted from
 `Jupyter/IPython project's governance document
-<https://github.com/jupyter/governance/blob/master/governance.md>`_ and
+<https://github.com/jupyter/governance/blob/main/archive/governance.md>`_ and
 `NumPy's governance document
 <https://github.com/numpy/numpy/blob/master/doc/source/dev/governance/governance.rst>`_.
 

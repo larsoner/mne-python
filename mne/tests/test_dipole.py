@@ -1,50 +1,49 @@
 # Author: Eric Larson <larson.eric.d@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import os
 
-import numpy as np
-from numpy.testing import assert_allclose, assert_array_equal, assert_array_less
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
+from numpy.testing import assert_allclose, assert_array_equal, assert_array_less
 
 from mne import (
-    read_dipole,
-    read_forward_solution,
-    convert_forward_solution,
-    read_evokeds,
-    read_cov,
-    SourceEstimate,
-    write_evokeds,
-    fit_dipole,
-    transform_surface_to,
-    make_sphere_model,
-    pick_types,
-    pick_info,
-    EvokedArray,
-    read_source_spaces,
-    make_ad_hoc_cov,
-    make_forward_solution,
     Dipole,
     DipoleFixed,
     Epochs,
-    make_fixed_length_events,
     Evoked,
+    EvokedArray,
+    SourceEstimate,
+    convert_forward_solution,
+    fit_dipole,
     head_to_mni,
+    make_ad_hoc_cov,
+    make_fixed_length_events,
+    make_forward_solution,
+    make_sphere_model,
+    pick_info,
+    pick_types,
+    read_cov,
+    read_dipole,
+    read_evokeds,
+    read_forward_solution,
+    read_source_spaces,
+    transform_surface_to,
+    write_evokeds,
 )
-from mne.dipole import get_phantom_dipoles, _BDIP_ERROR_KEYS
-from mne.simulation import simulate_evoked
-from mne.datasets import testing
-from mne.utils import requires_mne, run_subprocess, _record_warnings
-from mne.proj import make_eeg_average_ref_proj
-
-from mne.io import read_raw_fif, read_raw_ctf
 from mne._fiff.constants import FIFF
-
-from mne.surface import _compute_nearest
 from mne.bem import _bem_find_surface, read_bem_solution
-from mne.transforms import apply_trans, _get_trans
+from mne.datasets import testing
+from mne.dipole import _BDIP_ERROR_KEYS, get_phantom_dipoles
+from mne.io import read_raw_ctf, read_raw_fif
+from mne.proj import make_eeg_average_ref_proj
+from mne.simulation import simulate_evoked
+from mne.surface import _compute_nearest
+from mne.transforms import _get_trans, apply_trans
+from mne.utils import _record_warnings, requires_mne, run_subprocess
 
 data_path = testing.data_path(download=False)
 meg_path = data_path / "MEG" / "sample"
@@ -103,6 +102,7 @@ def test_io_dipoles(tmp_path):
 @testing.requires_testing_data
 def test_dipole_fitting_ctf():
     """Test dipole fitting with CTF data."""
+    pytest.importorskip("nibabel")
     raw_ctf = read_raw_ctf(fname_ctf).set_eeg_reference(projection=True)
     events = make_fixed_length_events(raw_ctf, 1)
     evoked = Epochs(raw_ctf, events, 1, 0, 0, baseline=None).average()
@@ -127,6 +127,7 @@ def test_dipole_fitting_ctf():
 @requires_mne
 def test_dipole_fitting(tmp_path):
     """Test dipole fitting."""
+    pytest.importorskip("nibabel")
     amp = 100e-9
     rng = np.random.RandomState(0)
     fname_dtemp = tmp_path / "test.dip"
@@ -214,10 +215,9 @@ def test_dipole_fitting(tmp_path):
     # Sanity check: do our residuals have less power than orig data?
     data_rms = np.sqrt(np.sum(evoked.data**2, axis=0))
     resi_rms = np.sqrt(np.sum(residual.data**2, axis=0))
-    assert (data_rms > resi_rms * 0.95).all(), "%s (factor: %s)" % (
-        (data_rms / resi_rms).min(),
-        0.95,
-    )
+    assert (
+        data_rms > resi_rms * 0.95
+    ).all(), f"{(data_rms / resi_rms).min()} (factor: {0.95})"
 
     # Compare to original points
     transform_surface_to(fwd["src"][0], "head", fwd["mri_head_t"])
@@ -244,12 +244,12 @@ def test_dipole_fitting(tmp_path):
     # XXX possibly some OpenBLAS numerical differences make
     # things slightly worse for us
     factor = 0.7
-    assert dists[0] / factor >= dists[1], "dists: %s" % dists
-    assert corrs[0] * factor <= corrs[1], "corrs: %s" % corrs
-    assert gc_dists[0] / factor >= gc_dists[1] * 0.8, "gc-dists (ori): %s" % gc_dists
-    assert amp_errs[0] / factor >= amp_errs[1], "amplitude errors: %s" % amp_errs
+    assert dists[0] / factor >= dists[1], f"dists: {dists}"
+    assert corrs[0] * factor <= corrs[1], f"corrs: {corrs}"
+    assert gc_dists[0] / factor >= gc_dists[1] * 0.8, f"gc-dists (ori): {gc_dists}"
+    assert amp_errs[0] / factor >= amp_errs[1], f"amplitude errors: {amp_errs}"
     # This one is weird because our cov/sim/picking is weird
-    assert gofs[0] * factor <= gofs[1] * 2, "gof: %s" % gofs
+    assert gofs[0] * factor <= gofs[1] * 2, f"gof: {gofs}"
 
 
 @testing.requires_testing_data
@@ -471,14 +471,25 @@ def _check_roundtrip_fixed(dip, tmp_path):
             assert_allclose(ch_1[key], ch_2[key], err_msg=key)
 
 
-def test_get_phantom_dipoles():
+@pytest.mark.parametrize(
+    "kind, count",
+    [
+        ("vectorview", 32),
+        ("otaniemi", 32),
+        ("oyama", 50),
+    ],
+)
+def test_get_phantom_dipoles(kind, count):
     """Test getting phantom dipole locations."""
-    pytest.raises(ValueError, get_phantom_dipoles, 0)
-    pytest.raises(ValueError, get_phantom_dipoles, "foo")
-    for kind in ("vectorview", "otaniemi"):
-        pos, ori = get_phantom_dipoles(kind)
-        assert pos.shape == (32, 3)
-        assert ori.shape == (32, 3)
+    with pytest.raises(TypeError, match="must be an instance of"):
+        get_phantom_dipoles(0)
+    with pytest.raises(ValueError, match="Invalid value for"):
+        get_phantom_dipoles("foo")
+    pos, ori = get_phantom_dipoles(kind)
+    assert pos.shape == (count, 3)
+    assert ori.shape == (count, 3)
+    # pos should be orthogonal to ori for all dipoles
+    assert_allclose(np.sum(pos * ori, axis=1), 0.0, atol=1e-7)
 
 
 @testing.requires_testing_data
@@ -548,7 +559,7 @@ def test_bdip(fname_dip_, fname_bdip_, tmp_path):
             b = getattr(this_bdip, key)
             if key == "khi2" and dip_has_conf:
                 if d is not None:
-                    assert_allclose(d, b, atol=atol, err_msg="%s: %s" % (kind, key))
+                    assert_allclose(d, b, atol=atol, err_msg=f"{kind}: {key}")
                 else:
                     assert b is None
         if dip_has_conf:
@@ -562,7 +573,7 @@ def test_bdip(fname_dip_, fname_bdip_, tmp_path):
                     d,
                     b,
                     rtol=0.12,  # no so great, text I/O
-                    err_msg="%s: %s" % (kind, key),
+                    err_msg=f"{kind}: {key}",
                 )
         # Not stored
         assert this_bdip.name is None

@@ -3,14 +3,15 @@
 #          Eric Larson <larson.eric.d@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import numpy as np
 
-from ._peak_finder import peak_finder
-from .._fiff.pick import pick_types, pick_channels
-from ..utils import logger, verbose, _pl, _validate_type
-from ..filter import filter_data
+from .._fiff.pick import pick_channels, pick_types
 from ..epochs import Epochs
+from ..filter import filter_data
+from ..utils import _pl, _validate_type, logger, verbose
+from ._peak_finder import peak_finder
 
 
 @verbose
@@ -69,7 +70,7 @@ def find_eog_events(
     # Getting EOG Channel
     eog_inds = _get_eog_channel_index(ch_name, raw)
     eog_names = np.array(raw.ch_names)[eog_inds]  # for logging
-    logger.info("EOG channel index for this subject is: %s" % eog_inds)
+    logger.info(f"EOG channel index for this subject is: {eog_inds}")
 
     # Reject bad segments.
     reject_by_annotation = "omit" if reject_by_annotation else None

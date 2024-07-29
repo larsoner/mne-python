@@ -1,6 +1,7 @@
 # Authors: Eric Larson <larson.eric.d@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 from collections import OrderedDict
 from inspect import signature
@@ -25,18 +26,18 @@ def what(fname):
     -----
     .. versionadded:: 0.19
     """
-    from ..io import read_raw_fif
-    from ..epochs import read_epochs
-    from ..evoked import read_evokeds
-    from ..preprocessing import read_ica
-    from ..forward import read_forward_solution
-    from ..minimum_norm import read_inverse_operator
-    from ..source_space import read_source_spaces
     from ..bem import read_bem_solution, read_bem_surfaces
     from ..cov import read_cov
-    from ..transforms import read_trans
+    from ..epochs import read_epochs
     from ..event import read_events
+    from ..evoked import read_evokeds
+    from ..forward import read_forward_solution
+    from ..io import read_raw_fif
+    from ..minimum_norm import read_inverse_operator
+    from ..preprocessing import read_ica
     from ..proj import read_proj
+    from ..source_space import read_source_spaces
+    from ..transforms import read_trans
     from .meas_info import read_fiducials
 
     _check_fname(fname, overwrite="read", must_exist=True)
@@ -64,7 +65,7 @@ def what(fname):
         try:
             func(fname, **kwargs)
         except Exception as exp:
-            logger.debug("Not %s: %s" % (what, exp))
+            logger.debug(f"Not {what}: {exp}")
         else:
             return what
     return "unknown"

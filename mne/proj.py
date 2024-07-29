@@ -1,36 +1,37 @@
 # Authors: Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import numpy as np
 
-from .epochs import Epochs
-from .fixes import _safe_svd
-from .utils import (
-    check_fname,
-    logger,
-    verbose,
-    _check_option,
-    _check_fname,
-    _validate_type,
-)
 from ._fiff.constants import FIFF
 from ._fiff.open import fiff_open
-from ._fiff.pick import pick_types, pick_types_forward, _picks_to_idx
+from ._fiff.pick import _picks_to_idx, pick_types, pick_types_forward
 from ._fiff.proj import (
     Projection,
     _has_eeg_average_ref_proj,
     _read_proj,
-    make_projector,
-    make_eeg_average_ref_proj,
     _write_proj,
+    make_eeg_average_ref_proj,
+    make_projector,
 )
 from ._fiff.write import start_and_end_file
-from .event import make_fixed_length_events
-from .parallel import parallel_func
 from .cov import _check_n_samples
-from .forward import is_fixed_orient, _subject_from_forward, convert_forward_solution
+from .epochs import Epochs
+from .event import make_fixed_length_events
+from .fixes import _safe_svd
+from .forward import _subject_from_forward, convert_forward_solution, is_fixed_orient
+from .parallel import parallel_func
 from .source_estimate import _make_stc
+from .utils import (
+    _check_fname,
+    _check_option,
+    _validate_type,
+    check_fname,
+    logger,
+    verbose,
+)
 
 
 @verbose
@@ -150,8 +151,8 @@ def _compute_proj(
                 nrow=1,
                 ncol=u.size,
             )
-            desc = f"{kind}-{desc_prefix}-PCA-{k+1:02d}"
-            logger.info("Adding projection: %s", desc)
+            desc = f"{kind}-{desc_prefix}-PCA-{k + 1:02d}"
+            logger.info(f"Adding projection: {desc} (exp var={100 * float(var):0.1f}%)")
             proj = Projection(
                 active=False,
                 data=proj_data,
@@ -216,17 +217,20 @@ def compute_proj_epochs(
     else:
         event_id = "Multiple-events"
     if desc_prefix is None:
-        desc_prefix = "%s-%-.3f-%-.3f" % (event_id, epochs.tmin, epochs.tmax)
+        desc_prefix = f"{event_id}-{epochs.tmin:<.3f}-{epochs.tmax:<.3f}"
     return _compute_proj(data, epochs.info, n_grad, n_mag, n_eeg, desc_prefix, meg=meg)
 
 
-def _compute_cov_epochs(epochs, n_jobs):
+def _compute_cov_epochs(epochs, n_jobs, *, log_drops=False):
     """Compute epochs covariance."""
     parallel, p_fun, n_jobs = parallel_func(np.dot, n_jobs)
+    n_start = len(epochs.events)
     data = parallel(p_fun(e, e.T) for e in epochs)
     n_epochs = len(data)
     if n_epochs == 0:
         raise RuntimeError("No good epochs found")
+    if log_drops:
+        logger.info(f"Dropped {n_start - n_epochs}/{n_start} epochs")
 
     n_chan, n_samples = epochs.info["nchan"], len(epochs.times)
     _check_n_samples(n_samples * n_epochs, n_chan)
@@ -272,7 +276,7 @@ def compute_proj_evoked(
     """
     data = np.dot(evoked.data, evoked.data.T)  # compute data covariance
     if desc_prefix is None:
-        desc_prefix = "%-.3f-%-.3f" % (evoked.times[0], evoked.times[-1])
+        desc_prefix = f"{evoked.times[0]:<.3f}-{evoked.times[-1]:<.3f}"
     return _compute_proj(data, evoked.info, n_grad, n_mag, n_eeg, desc_prefix, meg=meg)
 
 
@@ -350,7 +354,7 @@ def compute_proj_raw(
             baseline=None,
             proj=False,
         )
-        data = _compute_cov_epochs(epochs, n_jobs)
+        data = _compute_cov_epochs(epochs, n_jobs, log_drops=True)
         info = epochs.info
         if not stop:
             stop = raw.n_times / raw.info["sfreq"]
@@ -367,7 +371,7 @@ def compute_proj_raw(
         start = start / raw.info["sfreq"]
         stop = stop / raw.info["sfreq"]
 
-    desc_prefix = "Raw-%-.3f-%-.3f" % (start, stop)
+    desc_prefix = f"Raw-{start:<.3f}-{stop:<.3f}"
     projs = _compute_proj(data, info, n_grad, n_mag, n_eeg, desc_prefix, meg=meg)
     return projs
 
@@ -455,11 +459,11 @@ def sensitivity_map(
         elif ncomp == 0:
             raise RuntimeError(
                 "No valid projectors found for channel type "
-                "%s, cannot compute %s" % (ch_type, mode)
+                f"{ch_type}, cannot compute {mode}"
             )
     # can only run the last couple methods if there are projectors
     elif mode in residual_types:
-        raise ValueError("No projectors used, cannot compute %s" % mode)
+        raise ValueError(f"No projectors used, cannot compute {mode}")
 
     _, n_dipoles = gain.shape
     n_locations = n_dipoles // 3
@@ -491,7 +495,7 @@ def sensitivity_map(
                     elif mode == "dampening":
                         sensitivity_map[k] = 1.0 - p / gz
                     else:
-                        raise ValueError("Unknown mode type (got %s)" % mode)
+                        raise ValueError(f"Unknown mode type (got {mode})")
 
     # only normalize fixed and free methods
     if mode in ["fixed", "free"]:

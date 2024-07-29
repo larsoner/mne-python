@@ -26,16 +26,18 @@ being reproducible.
 # Author: Marijn van Vliet <w.m.vanvliet@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 ###############################################################################
 # Importing everything and setting up the data paths for the MNE-Sample
 # dataset.
-import mne
-from mne.datasets import sample
-from mne.channels import read_vectorview_selection
-from mne.minimum_norm import make_inverse_operator, apply_inverse, apply_inverse_epochs
 import matplotlib.pyplot as plt
 import numpy as np
+
+import mne
+from mne.channels import read_vectorview_selection
+from mne.datasets import sample
+from mne.minimum_norm import apply_inverse, apply_inverse_epochs, make_inverse_operator
 
 data_path = sample.data_path()
 meg_path = data_path / "MEG" / "sample"

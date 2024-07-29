@@ -3,15 +3,16 @@
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-import pytest
 import numpy as np
+import pytest
 
-from mne.datasets.testing import data_path
-from mne.io import read_raw_nirx, BaseRaw, read_raw_fif
-from mne.preprocessing.nirs import optical_density, beer_lambert_law
-from mne.utils import _validate_type
 from mne.datasets import testing
+from mne.datasets.testing import data_path
+from mne.io import BaseRaw, read_raw_fif, read_raw_nirx
+from mne.preprocessing.nirs import beer_lambert_law, optical_density
+from mne.utils import _validate_type
 
 testing_path = data_path(download=False)
 fname_nirx_15_0 = testing_path / "NIRx" / "nirscout" / "nirx_15_0_recording"
@@ -77,7 +78,7 @@ def test_beer_lambert_v_matlab():
     pymatreader = pytest.importorskip("pymatreader")
     raw = read_raw_nirx(fname_nirx_15_0)
     raw = optical_density(raw)
-    raw = beer_lambert_law(raw, ppf=0.121)
+    raw = beer_lambert_law(raw, ppf=(0.121, 0.121))
     raw._data *= 1e6  # Scale to uM for comparison to MATLAB
 
     matlab_fname = (

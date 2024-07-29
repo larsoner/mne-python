@@ -1,6 +1,7 @@
 # Author: Eric Larson <larson.eric.d@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import numpy as np
 import pytest
@@ -10,10 +11,10 @@ from mne import pick_types
 from mne.datasets import testing
 from mne.io import read_raw_fif
 from mne.preprocessing import (
-    regress_artifact,
-    create_eog_epochs,
     EOGRegression,
+    create_eog_epochs,
     read_eog_regression,
+    regress_artifact,
 )
 
 data_path = testing.data_path(download=False)
@@ -31,7 +32,7 @@ def test_regress_artifact():
     orig_norm = np.linalg.norm(orig_data)
     epochs_clean, betas = regress_artifact(epochs)
     regress_artifact(epochs, betas=betas, copy=False)  # inplace, and w/betas
-    assert_allclose(epochs_clean.get_data(), epochs.get_data())
+    assert_allclose(epochs_clean.get_data(copy=False), epochs.get_data(copy=False))
     clean_data = epochs_clean.get_data("eeg")
     clean_norm = np.linalg.norm(clean_data)
     assert orig_norm / 2 > clean_norm > orig_norm / 10
@@ -41,6 +42,19 @@ def test_regress_artifact():
     epochs, betas = regress_artifact(epochs, picks="eog", picks_artifact="eog")
     assert np.ptp(epochs.get_data("eog")) < 1e-15  # constant value
     assert_allclose(betas, 1)
+    # proj should only be required of channels being processed
+    raw = read_raw_fif(raw_fname).crop(0, 1).load_data()
+    raw.del_proj()
+    raw.set_eeg_reference(projection=True)
+    model = EOGRegression(proj=False, picks="meg", picks_artifact="eog")
+    model.fit(raw)
+    model.apply(raw)
+    model = EOGRegression(proj=False, picks="eeg", picks_artifact="eog")
+    with pytest.raises(RuntimeError, match="Projections need to be applied"):
+        model.fit(raw)
+    raw.del_proj()
+    with pytest.raises(RuntimeError, match="No average reference for the EEG"):
+        model.fit(raw)
 
 
 @testing.requires_testing_data

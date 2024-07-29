@@ -282,6 +282,18 @@ are richly annotated, and can be used for e.g. multiple regression estimation
 of EEG correlates of printed word processing.
 
 
+KIT phantom dataset
+=============================
+:func:`mne.datasets.phantom_kit.data_path`.
+
+This dataset was obtained with a phantom on a KIT system at
+Macquarie University in Sydney, Australia.
+
+.. topic:: Examples
+
+    * :ref:`tut-phantom-KIT`
+
+
 4D Neuroimaging / BTi dataset
 =============================
 :func:`mne.datasets.phantom_4dbti.data_path`.
@@ -292,6 +304,19 @@ the MEG center in La Timone hospital in Marseille.
 .. topic:: Examples
 
     * :ref:`tut-phantom-4Dbti`
+
+Kernel OPM phantom dataset
+==========================
+:func:`mne.datasets.phantom_kernel.data_path`.
+
+This dataset was obtained with a Neuromag phantom in a Kernel Flux (720-sensor)
+system at ILABS at the University of Washington. Only 7 out of 42 possible modules
+were active for testing purposes, yielding 121 channels of data with limited coverage
+(mostly occipital and parietal).
+
+.. topic:: Examples
+
+    * :ref:`ex-kernel-opm-phantom`
 
 OPM
 ===
@@ -481,15 +506,33 @@ EYELINK
 =======
 :func:`mne.datasets.eyelink.data_path`
 
-A small example dataset from a pupillary light reflex experiment. Both EEG (EGI) and
-eye-tracking (SR Research EyeLink; ASCII format) data were recorded and stored in
-separate files. 1 participant fixated on the screen while short light flashes appeared.
-Event onsets were recorded by a photodiode attached to the screen and were
-sent to both the EEG and eye-tracking systems.
+Two small example datasets of eye-tracking data from SR Research EyeLink.
+
+EEG-Eyetracking
+^^^^^^^^^^^^^^^
+:func:`mne.datasets.eyelink.data_path`. Data exists at ``/eeg-et/``.
+
+Contains both EEG (EGI) and eye-tracking (ASCII format) data recorded from a
+pupillary light reflex experiment, stored in separate files. 1 participant fixated
+on the screen while short light flashes appeared. Event onsets were recorded by a
+photodiode attached to the screen and were sent to both the EEG and eye-tracking
+systems.
 
 .. topic:: Examples
 
     * :ref:`tut-eyetrack`
+
+Freeviewing
+^^^^^^^^^^^
+:func:`mne.datasets.eyelink.data_path`. Data exists at ``/freeviewing/``.
+
+Contains eye-tracking data (ASCII format) from 1 participant who was free-viewing a
+video of a natural scene. In some videos, the natural scene was pixelated such that
+the people in the scene were unrecognizable.
+
+.. topic:: Examples
+
+    * :ref:`tut-eyetrack-heatmap`
 
 References
 ==========

@@ -9,62 +9,61 @@
 #          Stefan Appelhoff <stefan.appelhoff@mailbox.org>
 #          Joan Massich <mailsik@gmail.com>
 #
-# License: Simplified BSD
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-from collections import OrderedDict
-from dataclasses import dataclass
-from copy import deepcopy
 import os.path as op
 import re
+from collections import OrderedDict
+from copy import deepcopy
+from dataclasses import dataclass
 
 import numpy as np
 
-from ..defaults import HEAD_SIZE_DEFAULT
-from .._freesurfer import get_mni_fiducials
-from ..viz import plot_montage
-from ..transforms import (
-    apply_trans,
-    get_ras_to_neuromag_trans,
-    _sph_to_cart,
-    _topo_to_sph,
-    _frame_to_str,
-    Transform,
-    _verbose_frames,
-    _fit_matched_points,
-    _quat_to_affine,
-    _ensure_trans,
-)
 from .._fiff._digitization import (
+    _coord_frame_const,
     _count_points_by_type,
     _ensure_fiducials_head,
-    _get_dig_eeg,
-    _make_dig_points,
-    write_dig,
-    _read_dig_fif,
     _format_dig_points,
-    _get_fid_coords,
-    _coord_frame_const,
     _get_data_as_dict_from_dig,
+    _get_dig_eeg,
+    _get_fid_coords,
+    _make_dig_points,
+    _read_dig_fif,
+    write_dig,
 )
+from .._fiff.constants import CHANNEL_LOC_ALIASES, FIFF
 from .._fiff.meas_info import create_info
 from .._fiff.open import fiff_open
-from .._fiff.pick import pick_types, _picks_to_idx, channel_type
-from .._fiff.constants import FIFF, CHANNEL_LOC_ALIASES
+from .._fiff.pick import _picks_to_idx, channel_type, pick_types
+from .._freesurfer import get_mni_fiducials
+from ..defaults import HEAD_SIZE_DEFAULT
+from ..transforms import (
+    Transform,
+    _ensure_trans,
+    _fit_matched_points,
+    _frame_to_str,
+    _quat_to_affine,
+    _sph_to_cart,
+    _topo_to_sph,
+    _verbose_frames,
+    apply_trans,
+    get_ras_to_neuromag_trans,
+)
 from ..utils import (
-    warn,
-    copy_function_doc_to_method_doc,
-    _pl,
-    verbose,
-    _check_option,
-    _validate_type,
     _check_fname,
+    _check_option,
     _on_missing,
+    _pl,
+    _validate_type,
+    copy_function_doc_to_method_doc,
     fill_doc,
+    verbose,
+    warn,
 )
 from ..utils.docs import docdict
-
-from ._dig_montage_utils import _read_dig_montage_egi
-from ._dig_montage_utils import _parse_brainvision_dig_montage
+from ..viz import plot_montage
+from ._dig_montage_utils import _parse_brainvision_dig_montage, _read_dig_montage_egi
 
 
 @dataclass
@@ -370,17 +369,19 @@ class DigMontage:
     @copy_function_doc_to_method_doc(plot_montage)
     def plot(
         self,
-        scale_factor=20,
+        *,
+        scale=None,
+        scale_factor=None,
         show_names=True,
         kind="topomap",
         show=True,
         sphere=None,
-        *,
         axes=None,
         verbose=None,
     ):
         return plot_montage(
             self,
+            scale=scale,
             scale_factor=scale_factor,
             show_names=show_names,
             kind=kind,
@@ -442,7 +443,7 @@ class DigMontage:
                 (
                     "Cannot add two DigMontage objects if they contain duplicated"
                     " channel names. Duplicated channel(s) found: {}."
-                ).format(", ".join(["%r" % v for v in sorted(ch_names_intersection)]))
+                ).format(", ".join([f"{v!r}" for v in sorted(ch_names_intersection)]))
             )
 
         # Check for unique matching fiducials
@@ -462,7 +463,7 @@ class DigMontage:
                     raise RuntimeError(
                         "Cannot add two DigMontage objects if "
                         "fiducial locations do not match "
-                        "(%s)" % kk
+                        f"({kk})"
                     )
 
             # keep self
@@ -786,7 +787,7 @@ def read_dig_dat(fname):
 
     fname = _check_fname(fname, overwrite="read", must_exist=True)
 
-    with open(fname, "r") as fid:
+    with open(fname) as fid:
         lines = fid.readlines()
 
     ch_names, poss = list(), list()
@@ -797,8 +798,8 @@ def read_dig_dat(fname):
             continue
         elif len(items) != 5:
             raise ValueError(
-                "Error reading %s, line %s has unexpected number of entries:\n"
-                "%s" % (fname, i, line.rstrip())
+                f"Error reading {fname}, line {i} has unexpected number of entries:\n"
+                f"{line.rstrip()}"
             )
         num = items[1]
         if num == "67":
@@ -928,7 +929,7 @@ def read_dig_hpts(fname, unit="mm"):
         eeg    F7  -6.1042  -68.2969   45.4939
         ...
     """
-    from ._standard_montage_utils import _str_names, _str
+    from ._standard_montage_utils import _str, _str_names
 
     fname = _check_fname(fname, overwrite="read", must_exist=True)
     _scale = _check_unit_and_get_scaling(unit)
@@ -1208,14 +1209,14 @@ def _set_montage(info, montage, match_case=True, match_alias=False, on_missing="
         n_dup = len(ch_pos) - len(ch_pos_use)
         if n_dup:
             raise ValueError(
-                "Cannot use match_case=False as %s montage "
-                "name(s) require case sensitivity" % n_dup
+                f"Cannot use match_case=False as {n_dup} montage "
+                "name(s) require case sensitivity"
             )
         n_dup = len(info_names_use) - len(set(info_names_use))
         if n_dup:
             raise ValueError(
-                "Cannot use match_case=False as %s channel "
-                "name(s) require case sensitivity" % n_dup
+                f"Cannot use match_case=False as {n_dup} channel "
+                "name(s) require case sensitivity"
             )
         ch_pos = ch_pos_use
         del ch_pos_use
@@ -1353,7 +1354,7 @@ def _read_isotrak_elp_points(fname):
         and 'points'.
     """
     value_pattern = r"\-?\d+\.?\d*e?\-?\d*"
-    coord_pattern = r"({0})\s+({0})\s+({0})\s*$".format(value_pattern)
+    coord_pattern = rf"({value_pattern})\s+({value_pattern})\s+({value_pattern})\s*$"
 
     with open(fname) as fid:
         file_str = fid.read()
@@ -1475,11 +1476,9 @@ def read_dig_polhemus_isotrak(fname, ch_names=None, unit="m"):
             data["ch_pos"] = OrderedDict(zip(ch_names, points))
         else:
             raise ValueError(
-                (
-                    "Length of ``ch_names`` does not match the number of points"
-                    " in {fname}. Expected ``ch_names`` length {n_points:d},"
-                    " given {n_chnames:d}"
-                ).format(fname=fname, n_points=points.shape[0], n_chnames=len(ch_names))
+                "Length of ``ch_names`` does not match the number of points in "
+                f"{fname}. Expected ``ch_names`` length {points.shape[0]}, given "
+                f"{len(ch_names)}"
             )
 
     return make_dig_montage(**data)
@@ -1487,7 +1486,7 @@ def read_dig_polhemus_isotrak(fname, ch_names=None, unit="m"):
 
 def _is_polhemus_fastscan(fname):
     header = ""
-    with open(fname, "r") as fid:
+    with open(fname) as fid:
         for line in fid:
             if not line.startswith("%"):
                 break
@@ -1530,7 +1529,7 @@ def read_polhemus_fastscan(
     _check_option("fname", ext, VALID_FILE_EXT)
 
     if not _is_polhemus_fastscan(fname):
-        msg = "%s does not contain a valid Polhemus FastSCAN header" % fname
+        msg = f"{fname} does not contain a valid Polhemus FastSCAN header"
         _on_missing(on_header_missing, msg)
 
     points = _scale * np.loadtxt(fname, comments="%", ndmin=2)
@@ -1592,12 +1591,12 @@ def read_custom_montage(fname, head_size=HEAD_SIZE_DEFAULT, coord_frame=None):
     :func:`make_dig_montage` that takes arrays as input.
     """
     from ._standard_montage_utils import (
-        _read_theta_phi_in_degrees,
-        _read_sfp,
+        _read_brainvision,
         _read_csd,
         _read_elc,
         _read_elp_besa,
-        _read_brainvision,
+        _read_sfp,
+        _read_theta_phi_in_degrees,
         _read_xyz,
     )
 
@@ -1622,7 +1621,7 @@ def read_custom_montage(fname, head_size=HEAD_SIZE_DEFAULT, coord_frame=None):
 
     if ext in SUPPORTED_FILE_EXT["eeglab"]:
         if head_size is None:
-            raise ValueError("``head_size`` cannot be None for '{}'".format(ext))
+            raise ValueError(f"``head_size`` cannot be None for '{ext}'")
         ch_names, pos = _read_eeglab_locations(fname)
         scale = head_size / np.median(np.linalg.norm(pos, axis=-1))
         pos *= scale
@@ -1643,7 +1642,7 @@ def read_custom_montage(fname, head_size=HEAD_SIZE_DEFAULT, coord_frame=None):
 
     elif ext in SUPPORTED_FILE_EXT["generic (Theta-phi in degrees)"]:
         if head_size is None:
-            raise ValueError("``head_size`` cannot be None for '{}'".format(ext))
+            raise ValueError(f"``head_size`` cannot be None for '{ext}'")
         montage = _read_theta_phi_in_degrees(
             fname, head_size=head_size, fid_names=("Nz", "LPA", "RPA")
         )
@@ -1712,11 +1711,9 @@ def compute_dev_head_t(montage):
 
     if not (len(hpi_head) == len(hpi_dev) and len(hpi_dev) > 0):
         raise ValueError(
-            (
-                "To compute Device-to-Head transformation, the same number of HPI"
-                " points in device and head coordinates is required. (Got {dev}"
-                " points in device and {head} points in head coordinate systems)"
-            ).format(dev=len(hpi_dev), head=len(hpi_head))
+            "To compute Device-to-Head transformation, the same number of HPI"
+            f" points in device and head coordinates is required. (Got {len(hpi_dev)}"
+            f" points in device and {len(hpi_head)} points in head coordinate systems)"
         )
 
     trans = _quat_to_affine(_fit_matched_points(hpi_dev, hpi_head)[0])

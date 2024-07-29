@@ -4,16 +4,16 @@
 #          Denis Engemann <denis.engemann@gmail.com>
 #          Martin Luessi <mluessi@nmr.mgh.harvard.edu>
 #
-# License: Simplified BSD
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-
-from itertools import cycle
 from functools import partial
+from itertools import cycle
 
 import numpy as np
 
-from .utils import plt_show, _get_cmap
 from ..utils import _validate_type
+from .utils import _get_cmap, plt_show
 
 
 def circular_layout(
@@ -59,11 +59,9 @@ def circular_layout(
     if group_boundaries is not None:
         boundaries = np.array(group_boundaries, dtype=np.int64)
         if np.any(boundaries >= n_nodes) or np.any(boundaries < 0):
-            raise ValueError(
-                '"group_boundaries" has to be between 0 and ' "n_nodes - 1."
-            )
+            raise ValueError('"group_boundaries" has to be between 0 and n_nodes - 1.')
         if len(boundaries) > 1 and np.any(np.diff(boundaries) <= 0):
-            raise ValueError('"group_boundaries" must have non-decreasing ' "values.")
+            raise ValueError('"group_boundaries" must have non-decreasing values.')
         n_group_sep = len(group_boundaries)
     else:
         n_group_sep = 0
@@ -96,7 +94,13 @@ def circular_layout(
 
 
 def _plot_connectivity_circle_onpick(
-    event, fig=None, ax=None, indices=None, n_nodes=0, node_angles=None, ylim=[9, 10]
+    event,
+    fig=None,
+    ax=None,
+    indices=None,
+    n_nodes=0,
+    node_angles=None,
+    ylim=(9, 10),
 ):
     """Isolate connections around a single node when user left clicks a node.
 
@@ -154,9 +158,9 @@ def _plot_connectivity_circle(
     node_linewidth=2.0,
     show=True,
 ):
-    import matplotlib.pyplot as plt
-    import matplotlib.path as m_path
     import matplotlib.patches as m_patches
+    import matplotlib.path as m_path
+    import matplotlib.pyplot as plt
     from matplotlib.projections.polar import PolarAxes
 
     _validate_type(ax, (None, PolarAxes))
@@ -165,7 +169,7 @@ def _plot_connectivity_circle(
 
     if node_angles is not None:
         if len(node_angles) != n_nodes:
-            raise ValueError("node_angles has to be the same length " "as node_names")
+            raise ValueError("node_angles has to be the same length as node_names")
         # convert it to radians
         node_angles = node_angles * np.pi / 180
     else:
@@ -212,7 +216,7 @@ def _plot_connectivity_circle(
 
     # Use a polar axes
     if ax is None:
-        fig = plt.figure(figsize=(8, 8), facecolor=facecolor)
+        fig = plt.figure(figsize=(8, 8), facecolor=facecolor, layout="constrained")
         ax = fig.add_subplot(polar=True)
     else:
         fig = ax.figure

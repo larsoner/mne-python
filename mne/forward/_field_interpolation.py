@@ -1,34 +1,37 @@
 # Authors: Matti Hämäläinen <msh@nmr.mgh.harvard.edu>
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #          Eric Larson <larson.eric.d@gmail.com>
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 # The computations in this code were primarily derived from Matti Hämäläinen's
 # C code.
 
+import inspect
 from copy import deepcopy
 
 import numpy as np
 from scipy.interpolate import interp1d
 
+from .._fiff.constants import FIFF
+from .._fiff.meas_info import _simplify_info
+from .._fiff.pick import pick_info, pick_types
+from .._fiff.proj import _has_eeg_average_ref_proj, make_projector
 from ..bem import _check_origin
 from ..cov import make_ad_hoc_cov
+from ..epochs import BaseEpochs, EpochsArray
+from ..evoked import Evoked, EvokedArray
 from ..fixes import _safe_svd
-from .._fiff.constants import FIFF
-from .._fiff.pick import pick_types, pick_info
-from .._fiff.meas_info import _simplify_info
-from .._fiff.proj import _has_eeg_average_ref_proj, make_projector
 from ..surface import get_head_surf, get_meg_helmet_surf
-from ..transforms import transform_surface_to, _find_trans, _get_trans
-from ._make_forward import _create_meg_coils, _create_eeg_els, _read_coil_defs
+from ..transforms import _find_trans, _get_trans, transform_surface_to
+from ..utils import _check_fname, _check_option, _pl, _reg_pinv, logger, verbose
 from ._lead_dots import (
+    _do_cross_dots,
     _do_self_dots,
     _do_surface_dots,
     _get_legen_table,
-    _do_cross_dots,
 )
-from ..utils import logger, verbose, _check_option, _reg_pinv, _pl, _check_fname
-from ..epochs import EpochsArray, BaseEpochs
-from ..evoked import Evoked, EvokedArray
+from ._make_forward import _create_eeg_els, _create_meg_coils, _read_coil_defs
 
 
 def _setup_dots(mode, info, coils, ch_type):
@@ -260,7 +263,10 @@ def _as_meg_type_inst(inst, ch_type="grad", mode="fast"):
     # compute data by multiplying by the 'gain matrix' from
     # original sensors to virtual sensors
     if hasattr(inst, "get_data"):
-        data = inst.get_data()
+        kwargs = dict()
+        if "copy" in inspect.getfullargspec(inst.get_data).kwonlyargs:
+            kwargs["copy"] = False
+        data = inst.get_data(**kwargs)
     else:
         data = inst.data
 
@@ -345,7 +351,7 @@ def _make_surface_mapping(
         raise KeyError('surf must have both "rr" and "nn"')
     if "coord_frame" not in surf:
         raise KeyError(
-            "The surface coordinate frame must be specified " 'in surf["coord_frame"]'
+            'The surface coordinate frame must be specified in surf["coord_frame"]'
         )
     _check_option("mode", mode, ["accurate", "fast"])
 

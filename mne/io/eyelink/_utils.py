@@ -1,10 +1,10 @@
 """Helper functions for reading eyelink ASCII files."""
 # Authors: Scott Huberty <seh33@uw.edu>
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-
-from datetime import datetime, timezone, timedelta
 import re
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
@@ -122,6 +122,8 @@ def _parse_recording_blocks(fname):
                 is_recording_block = True
             if is_recording_block:
                 tokens = line.split()
+                if not tokens:
+                    continue  # skip empty lines
                 if tokens[0][0].isnumeric():  # Samples
                     data_dict["sample_lines"].append(tokens)
                 elif tokens[0] in data_dict["event_lines"].keys():
@@ -185,8 +187,18 @@ def _get_recording_datetime(fname):
                     # Eyelink measdate timestamps are timezone naive.
                     # Force datetime to be in UTC.
                     # Even though dt is probably in local time zone.
-                    dt_naive = datetime.strptime(dt_str, fmt)
-                    return dt_naive.replace(tzinfo=tz)  # make it dt aware
+                    try:
+                        dt_naive = datetime.strptime(dt_str, fmt)
+                    except ValueError:
+                        # date string is missing or in an unexpected format
+                        logger.info(
+                            "Could not detect date from file with date entry: "
+                            f"{repr(dt_str)}"
+                        )
+                        return
+                    else:
+                        return dt_naive.replace(tzinfo=tz)  # make it dt aware
+        return
 
 
 def _get_metadata(raw_extras):
@@ -505,7 +517,7 @@ def _adjust_times(
         np.arange(first, last + step / 2, step), columns=[time_col]
     )
     return pd.merge_asof(
-        new_times, df, on=time_col, direction="nearest", tolerance=step / 10
+        new_times, df, on=time_col, direction="nearest", tolerance=step / 2
     )
 
 

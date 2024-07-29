@@ -1,12 +1,13 @@
 # Authors: Scott Huberty <seh33@uw.edu>
-# License: BSD
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import numpy as np
 import pytest
 
 from mne import create_info
 from mne.datasets.testing import data_path, requires_testing_data
-from mne.io import read_raw_eyelink, RawArray
+from mne.io import RawArray, read_raw_eyelink
 from mne.preprocessing.eyetracking import interpolate_blinks
 
 fname = data_path(download=False) / "eyetrack" / "test_eyelink.asc"

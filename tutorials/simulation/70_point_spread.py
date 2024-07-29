@@ -10,15 +10,16 @@ desired location(s) in a :class:`mne.SourceEstimate` and then corrupt the
 signal with point-spread by applying a forward and inverse solution.
 """
 
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 # %%
 
 import numpy as np
 
 import mne
 from mne.datasets import sample
-
-from mne.minimum_norm import read_inverse_operator, apply_inverse
-from mne.simulation import simulate_stc, simulate_evoked
+from mne.minimum_norm import apply_inverse, read_inverse_operator
+from mne.simulation import simulate_evoked, simulate_stc
 
 # %%
 # First, we set some parameters.

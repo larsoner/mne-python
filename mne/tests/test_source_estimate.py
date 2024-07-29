@@ -1,5 +1,6 @@
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import os
 import re
@@ -9,76 +10,75 @@ from pathlib import Path
 from shutil import copyfile
 
 import numpy as np
+import pytest
 from numpy.fft import fft
 from numpy.testing import (
+    assert_allclose,
     assert_array_almost_equal,
     assert_array_equal,
-    assert_allclose,
-    assert_equal,
     assert_array_less,
+    assert_equal,
 )
-import pytest
 from scipy import sparse
 from scipy.optimize import fmin_cobyla
 from scipy.spatial.distance import cdist
 
 import mne
 from mne import (
-    stats,
+    Epochs,
+    EvokedArray,
+    Label,
+    MixedSourceEstimate,
+    MixedVectorSourceEstimate,
     SourceEstimate,
+    SourceSpaces,
     VectorSourceEstimate,
     VolSourceEstimate,
-    Label,
-    read_source_spaces,
-    read_evokeds,
-    MixedSourceEstimate,
-    find_events,
-    Epochs,
-    read_source_estimate,
+    VolVectorSourceEstimate,
+    compute_source_morph,
+    convert_forward_solution,
     extract_label_time_course,
-    spatio_temporal_tris_adjacency,
-    stc_near_sensors,
-    spatio_temporal_src_adjacency,
+    find_events,
+    labels_to_stc,
+    pick_info,
+    pick_types,
+    pick_types_forward,
     read_cov,
-    EvokedArray,
-    spatial_inter_hemi_adjacency,
+    read_evokeds,
     read_forward_solution,
+    read_source_estimate,
+    read_source_spaces,
+    read_trans,
+    scale_mri,
+    setup_volume_source_space,
+    spatial_inter_hemi_adjacency,
     spatial_src_adjacency,
     spatial_tris_adjacency,
-    pick_info,
-    SourceSpaces,
-    VolVectorSourceEstimate,
-    read_trans,
-    pick_types,
-    MixedVectorSourceEstimate,
-    setup_volume_source_space,
-    convert_forward_solution,
-    pick_types_forward,
-    compute_source_morph,
-    labels_to_stc,
-    scale_mri,
+    spatio_temporal_src_adjacency,
+    spatio_temporal_tris_adjacency,
+    stats,
+    stc_near_sensors,
     write_source_spaces,
 )
+from mne._fiff.constants import FIFF
 from mne.datasets import testing
 from mne.fixes import _get_img_fdata
-from mne.io import read_info
-from mne._fiff.constants import FIFF
-from mne.morph_map import _make_morph_map_hemi
-from mne.source_estimate import grade_to_tris, _get_vol_mask
-from mne.source_space._source_space import _get_src_nn
-from mne.transforms import apply_trans, invert_transform, transform_surface_to
+from mne.io import read_info, read_raw_fif
+from mne.label import label_sign_flip, read_labels_from_annot
 from mne.minimum_norm import (
-    read_inverse_operator,
     apply_inverse,
     apply_inverse_epochs,
     make_inverse_operator,
+    read_inverse_operator,
 )
-from mne.label import read_labels_from_annot, label_sign_flip
+from mne.morph_map import _make_morph_map_hemi
+from mne.source_estimate import _get_vol_mask, _make_stc, grade_to_tris
+from mne.source_space._source_space import _get_src_nn
+from mne.transforms import apply_trans, invert_transform, transform_surface_to
 from mne.utils import (
-    catch_logging,
     _record_warnings,
+    catch_logging,
 )
-from mne.io import read_raw_fif
 
 data_path = testing.data_path(download=False)
 subjects_dir = data_path / "subjects"
@@ -240,12 +240,40 @@ def test_volume_stc(tmp_path):
         stc.save(fname_vol, ftype="whatever", overwrite=True)
     for ftype in ["w", "h5"]:
         for _ in range(2):
-            fname_temp = tmp_path / ("temp-vol.%s" % ftype)
+            fname_temp = tmp_path / f"temp-vol.{ftype}"
             stc_new.save(fname_temp, ftype=ftype, overwrite=True)
             stc_new = read_source_estimate(fname_temp)
             assert isinstance(stc_new, VolSourceEstimate)
             assert_array_equal(stc.vertices[0], stc_new.vertices[0])
             assert_array_almost_equal(stc.data, stc_new.data)
+
+
+@testing.requires_testing_data
+def test_save_stc_as_gifti(tmp_path):
+    """Save the stc as a GIFTI file and export."""
+    nib = pytest.importorskip("nibabel")
+    surfpath_src = bem_path / "sample-oct-6-src.fif"
+    surfpath_stc = data_path / "MEG" / "sample" / "sample_audvis_trunc-meg"
+    src = read_source_spaces(surfpath_src)  # need source space
+    stc = read_source_estimate(surfpath_stc)  # need stc
+    assert isinstance(src, SourceSpaces)
+    assert isinstance(stc, SourceEstimate)
+
+    surf_fname = tmp_path / "stc_write"
+
+    stc.save_as_surface(surf_fname, src)
+
+    # did structural get written?
+    img_lh = nib.load(f"{surf_fname}-lh.gii")
+    img_rh = nib.load(f"{surf_fname}-rh.gii")
+    assert isinstance(img_lh, nib.gifti.gifti.GiftiImage)
+    assert isinstance(img_rh, nib.gifti.gifti.GiftiImage)
+
+    # did time series get written?
+    img_timelh = nib.load(f"{surf_fname}-lh.time.gii")
+    img_timerh = nib.load(f"{surf_fname}-rh.time.gii")
+    assert isinstance(img_timelh, nib.gifti.gifti.GiftiImage)
+    assert isinstance(img_timerh, nib.gifti.gifti.GiftiImage)
 
 
 @testing.requires_testing_data
@@ -371,7 +399,7 @@ def test_stc_snr():
     assert (stc.data < 0).any()
     with pytest.warns(RuntimeWarning, match="nAm"):
         stc.estimate_snr(evoked.info, fwd, cov)  # dSPM
-    with pytest.warns(RuntimeWarning, match="free ori"):
+    with _record_warnings(), pytest.warns(RuntimeWarning, match="free ori"):
         abs(stc).estimate_snr(evoked.info, fwd, cov)
     stc = apply_inverse(evoked, inv, method="MNE")
     snr = stc.estimate_snr(evoked.info, fwd, cov)
@@ -558,61 +586,73 @@ def test_stc_arithmetic():
 
 @pytest.mark.slowtest
 @testing.requires_testing_data
-def test_stc_methods():
+@pytest.mark.parametrize("kind", ("scalar", "vector"))
+@pytest.mark.parametrize("method", ("fft", "polyphase"))
+def test_stc_methods(kind, method):
     """Test stc methods lh_data, rh_data, bin(), resample()."""
-    stc_ = read_source_estimate(fname_stc)
+    stc = read_source_estimate(fname_stc)
 
-    # Make a vector version of the above source estimate
-    x = stc_.data[:, np.newaxis, :]
-    yz = np.zeros((x.shape[0], 2, x.shape[2]))
-    vec_stc_ = VectorSourceEstimate(
-        np.concatenate((x, yz), 1), stc_.vertices, stc_.tmin, stc_.tstep, stc_.subject
-    )
+    if kind == "vector":
+        # Make a vector version of the above source estimate
+        x = stc.data[:, np.newaxis, :]
+        yz = np.zeros((x.shape[0], 2, x.shape[2]))
+        stc = VectorSourceEstimate(
+            np.concatenate((x, yz), 1),
+            stc.vertices,
+            stc.tmin,
+            stc.tstep,
+            stc.subject,
+        )
 
-    for stc in [stc_, vec_stc_]:
-        # lh_data / rh_data
-        assert_array_equal(stc.lh_data, stc.data[: len(stc.lh_vertno)])
-        assert_array_equal(stc.rh_data, stc.data[len(stc.lh_vertno) :])
+    # lh_data / rh_data
+    assert_array_equal(stc.lh_data, stc.data[: len(stc.lh_vertno)])
+    assert_array_equal(stc.rh_data, stc.data[len(stc.lh_vertno) :])
 
-        # bin
-        binned = stc.bin(0.12)
-        a = np.mean(stc.data[..., : np.searchsorted(stc.times, 0.12)], axis=-1)
-        assert_array_equal(a, binned.data[..., 0])
+    # bin
+    binned = stc.bin(0.12)
+    a = np.mean(stc.data[..., : np.searchsorted(stc.times, 0.12)], axis=-1)
+    assert_array_equal(a, binned.data[..., 0])
 
-        stc = read_source_estimate(fname_stc)
-        stc.subject = "sample"
-        label_lh = read_labels_from_annot(
-            "sample", "aparc", "lh", subjects_dir=subjects_dir
-        )[0]
-        label_rh = read_labels_from_annot(
-            "sample", "aparc", "rh", subjects_dir=subjects_dir
-        )[0]
-        label_both = label_lh + label_rh
-        for label in (label_lh, label_rh, label_both):
-            assert isinstance(stc.shape, tuple) and len(stc.shape) == 2
-            stc_label = stc.in_label(label)
-            if label.hemi != "both":
-                if label.hemi == "lh":
-                    verts = stc_label.vertices[0]
-                else:  # label.hemi == 'rh':
-                    verts = stc_label.vertices[1]
-                n_vertices_used = len(label.get_vertices_used(verts))
-                assert_equal(len(stc_label.data), n_vertices_used)
-        stc_lh = stc.in_label(label_lh)
-        pytest.raises(ValueError, stc_lh.in_label, label_rh)
-        label_lh.subject = "foo"
-        pytest.raises(RuntimeError, stc.in_label, label_lh)
+    stc = read_source_estimate(fname_stc)
+    stc.subject = "sample"
+    label_lh = read_labels_from_annot(
+        "sample", "aparc", "lh", subjects_dir=subjects_dir
+    )[0]
+    label_rh = read_labels_from_annot(
+        "sample", "aparc", "rh", subjects_dir=subjects_dir
+    )[0]
+    label_both = label_lh + label_rh
+    for label in (label_lh, label_rh, label_both):
+        assert isinstance(stc.shape, tuple) and len(stc.shape) == 2
+        stc_label = stc.in_label(label)
+        if label.hemi != "both":
+            if label.hemi == "lh":
+                verts = stc_label.vertices[0]
+            else:  # label.hemi == 'rh':
+                verts = stc_label.vertices[1]
+            n_vertices_used = len(label.get_vertices_used(verts))
+            assert_equal(len(stc_label.data), n_vertices_used)
+    stc_lh = stc.in_label(label_lh)
+    pytest.raises(ValueError, stc_lh.in_label, label_rh)
+    label_lh.subject = "foo"
+    pytest.raises(RuntimeError, stc.in_label, label_lh)
 
-        stc_new = deepcopy(stc)
-        o_sfreq = 1.0 / stc.tstep
-        # note that using no padding for this STC reduces edge ringing...
-        stc_new.resample(2 * o_sfreq, npad=0)
-        assert stc_new.data.shape[1] == 2 * stc.data.shape[1]
-        assert stc_new.tstep == stc.tstep / 2
-        stc_new.resample(o_sfreq, npad=0)
-        assert stc_new.data.shape[1] == stc.data.shape[1]
-        assert stc_new.tstep == stc.tstep
-        assert_array_almost_equal(stc_new.data, stc.data, 5)
+    stc_new = deepcopy(stc)
+    o_sfreq = 1.0 / stc.tstep
+    # note that using no padding for this STC reduces edge ringing...
+    stc_new.resample(2 * o_sfreq, npad=0, method=method)
+    assert stc_new.data.shape[1] == 2 * stc.data.shape[1]
+    assert stc_new.tstep == stc.tstep / 2
+    stc_new.resample(o_sfreq, npad=0, method=method)
+    assert stc_new.data.shape[1] == stc.data.shape[1]
+    assert stc_new.tstep == stc.tstep
+    if method == "fft":
+        # no low-passing so survives round-trip
+        assert_allclose(stc_new.data, stc.data, atol=1e-5)
+    else:
+        # low-passing means we need something more flexible
+        corr = np.corrcoef(stc_new.data.ravel(), stc.data.ravel())[0, 1]
+        assert 0.99 < corr < 1
 
 
 @testing.requires_testing_data
@@ -678,11 +718,23 @@ def test_extract_label_time_course(kind, vector):
 
     label_tcs = dict(mean=np.arange(n_labels)[:, None] * np.ones((n_labels, n_times)))
     label_tcs["max"] = label_tcs["mean"]
+    label_tcs[None] = label_tcs["mean"]
 
     # compute the mean with sign flip
     label_tcs["mean_flip"] = np.zeros_like(label_tcs["mean"])
     for i, label in enumerate(labels):
         label_tcs["mean_flip"][i] = i * np.mean(label_sign_flip(label, src[:2]))
+
+    # compute pca_flip
+    label_flip = []
+    for i, label in enumerate(labels):
+        this_flip = i * label_sign_flip(label, src[:2])
+        label_flip.append(this_flip)
+    # compute pca_flip
+    label_tcs["pca_flip"] = np.zeros_like(label_tcs["mean"])
+    for i, (label, flip) in enumerate(zip(labels, label_flip)):
+        sign = np.sign(np.dot(np.full((flip.shape[0]), i), flip))
+        label_tcs["pca_flip"][i] = sign * label_tcs["mean"][i]
 
     # generate some stc's with known data
     stcs = list()
@@ -734,7 +786,7 @@ def test_extract_label_time_course(kind, vector):
             assert_array_equal(arr[1:], vol_means_t)
 
     # test the different modes
-    modes = ["mean", "mean_flip", "pca_flip", "max", "auto"]
+    modes = ["mean", "mean_flip", "pca_flip", "max", "auto", None]
 
     for mode in modes:
         if vector and mode not in ("mean", "max", "auto"):
@@ -748,18 +800,36 @@ def test_extract_label_time_course(kind, vector):
         ]
         assert len(label_tc) == n_stcs
         assert len(label_tc_method) == n_stcs
-        for tc1, tc2 in zip(label_tc, label_tc_method):
-            assert tc1.shape == (n_labels + len(vol_means),) + end_shape
-            assert tc2.shape == (n_labels + len(vol_means),) + end_shape
-            assert_allclose(tc1, tc2, rtol=1e-8, atol=1e-16)
+        for j, (tc1, tc2) in enumerate(zip(label_tc, label_tc_method)):
+            if mode is None:
+                assert all(arr.shape[1] == tc1[0].shape[1] for arr in tc1)
+                assert all(arr.shape[1] == tc2[0].shape[1] for arr in tc2)
+                assert (len(tc1), tc1[0].shape[1]) == (n_labels,) + end_shape
+                assert (len(tc2), tc2[0].shape[1]) == (n_labels,) + end_shape
+                for arr1, arr2 in zip(tc1, tc2):  # list of arrays
+                    assert_allclose(arr1, arr2, rtol=1e-8, atol=1e-16)
+            else:
+                assert tc1.shape == (n_labels + len(vol_means),) + end_shape
+                assert tc2.shape == (n_labels + len(vol_means),) + end_shape
+                assert_allclose(tc1, tc2, rtol=1e-8, atol=1e-16)
             if mode == "auto":
                 use_mode = "mean" if vector else "mean_flip"
             else:
                 use_mode = mode
-            # XXX we don't check pca_flip, probably should someday...
-            if use_mode in ("mean", "max", "mean_flip"):
+            if mode == "pca_flip":
+                for arr1, arr2 in zip(tc1, label_tcs[use_mode]):
+                    assert_array_almost_equal(arr1, arr2)
+            elif use_mode is None:
+                for arr1, arr2 in zip(
+                    tc1[:n_labels], label_tcs[use_mode]
+                ):  # list of arrays
+                    assert_allclose(
+                        arr1, np.tile(arr2, (arr1.shape[0], 1)), rtol=1e-8, atol=1e-16
+                    )
+            elif use_mode in ("mean", "max", "mean_flip"):
                 assert_array_almost_equal(tc1[:n_labels], label_tcs[use_mode])
-            assert_array_almost_equal(tc1[n_labels:], vol_means_t)
+            if mode is not None:
+                assert_array_almost_equal(tc1[n_labels:], vol_means_t)
 
     # test label with very few vertices (check SVD conditionals)
     label = Label(vertices=src[0]["vertno"][:2], hemi="lh")
@@ -890,7 +960,7 @@ def test_extract_label_time_course_volume(
             assert repr(missing) in log
         else:
             assert "does not contain" not in log
-        assert "\n%d/%d atlas regions had at least" % (n_want, n_tot) in log
+        assert f"\n{n_want}/{n_tot} atlas regions had at least" in log
         assert len(label_tc) == 1
         label_tc = label_tc[0]
         assert label_tc.shape == (n_tot,) + end_shape
@@ -1170,7 +1240,7 @@ def test_to_data_frame_index(index):
     # test index setting
     if not isinstance(index, list):
         index = [index]
-    assert df.index.names == index
+    assert list(df.index.names) == index
     # test that non-indexed data were present as columns
     non_index = list(set(["time", "subject"]) - set(index))
     if len(non_index):
@@ -1392,7 +1462,7 @@ def test_source_estime_project(real):
     want_nn /= np.linalg.norm(want_nn, axis=1, keepdims=True)
 
     stc = VolVectorSourceEstimate(data, [np.arange(n_src)], 0, 1)
-    stc_max, directions = stc.project("pca")
+    _, directions = stc.project("pca")
     flips = np.sign(np.sum(directions * want_nn, axis=1, keepdims=True))
     directions *= flips
     assert_allclose(directions, want_nn, atol=2e-6)
@@ -1451,9 +1521,6 @@ def invs():
     expected_nn = np.concatenate([_get_src_nn(s) for s in fwd["src"]])
     assert_allclose(fixed["source_nn"], expected_nn, atol=1e-7)
     return evoked, free, free_surf, freeish, fixed, fixedish
-
-
-bad_normal = pytest.param("normal", marks=pytest.mark.xfail(raises=AssertionError))
 
 
 @pytest.mark.parametrize("pick_ori", [None, "normal", "vector"])
@@ -1540,7 +1607,7 @@ def test_vol_adjacency():
     n_vertices = vol[0]["inuse"].sum()
     assert_equal(adjacency.shape, (n_vertices, n_vertices))
     assert np.all(adjacency.data == 1)
-    assert isinstance(adjacency, sparse.coo_matrix)
+    assert isinstance(adjacency, sparse.coo_array)
 
     adjacency2 = spatio_temporal_src_adjacency(vol, n_times=2)
     assert_equal(adjacency2.shape, (2 * n_vertices, 2 * n_vertices))
@@ -1643,7 +1710,8 @@ def test_stc_near_sensors(tmp_path):
     for s in src:
         transform_surface_to(s, "head", trans, copy=False)
     assert src[0]["coord_frame"] == FIFF.FIFFV_COORD_HEAD
-    stc_src = stc_near_sensors(evoked, src=src, **kwargs)
+    with pytest.warns(DeprecationWarning, match="instead of the pial"):
+        stc_src = stc_near_sensors(evoked, src=src, **kwargs)
     assert len(stc_src.data) == 7928
     with pytest.warns(RuntimeWarning, match="not included"):  # some removed
         stc_src_full = compute_source_morph(
@@ -1984,3 +2052,31 @@ def test_label_extraction_subject(kind):
         stc.subject = None
         with pytest.raises(ValueError, match=r"label\.sub.*not match.* sour"):
             extract_label_time_course(stc, labels_fs, src)
+
+
+def test_apply_function_stc():
+    """Check the apply_function method for source estimate data."""
+    # Create a sample _BaseSourceEstimate object
+    n_vertices = 100
+    n_times = 200
+    vertices = [np.array(np.arange(50)), np.array(np.arange(50, 100))]
+    tmin = 0.0
+    tstep = 0.001
+    data = np.random.default_rng(0).normal(size=(n_vertices, n_times))
+
+    stc = _make_stc(data, vertices, tmin=tmin, tstep=tstep, src_type="surface")
+
+    # A sample function to apply to the data
+    def fun(data_row, **kwargs):
+        return 2 * data_row
+
+    # Test applying the function to all vertices without parallelization
+    stc_copy = stc.copy()
+    stc.apply_function(fun)
+    for idx in range(n_vertices):
+        assert_allclose(stc.data[idx, :], 2 * stc_copy.data[idx, :])
+
+    # Test applying the function with parallelization
+    stc.apply_function(fun, n_jobs=2)
+    for idx in range(n_vertices):
+        assert_allclose(stc.data[idx, :], 4 * stc_copy.data[idx, :])

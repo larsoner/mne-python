@@ -2,58 +2,59 @@
 #         Denis A. Engemann <denis.engemann@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
-from pathlib import Path
+import hashlib
 from copy import deepcopy
 from functools import partial
-import hashlib
+from pathlib import Path
 
-import pytest
 import numpy as np
+import pytest
+from numpy.testing import assert_allclose, assert_array_equal, assert_equal
 from scipy.io import savemat
-from numpy.testing import assert_array_equal, assert_equal, assert_allclose
 
-from mne.channels import (
-    rename_channels,
-    read_ch_adjacency,
-    combine_channels,
-    find_ch_adjacency,
-    make_1020_channel_selections,
-    read_custom_montage,
-    equalize_channels,
-    get_builtin_ch_adjacencies,
-)
-from mne.channels.channels import (
-    _ch_neighbor_adjacency,
-    _compute_ch_adjacency,
-    _BUILTIN_CHANNEL_ADJACENCIES,
-    _BuiltinChannelAdjacency,
-)
-from mne.io import (
-    read_info,
-    read_raw_fif,
-    read_raw_ctf,
-    read_raw_bti,
-    read_raw_eeglab,
-    read_raw_kit,
-    RawArray,
-)
-from mne._fiff.constants import FIFF, _ch_unit_mul_named
 from mne import (
-    pick_types,
-    pick_channels,
+    Epochs,
     EpochsArray,
     EvokedArray,
-    make_ad_hoc_cov,
     create_info,
+    make_ad_hoc_cov,
+    pick_channels,
+    pick_types,
     read_events,
-    Epochs,
+)
+from mne._fiff.constants import FIFF, _ch_unit_mul_named
+from mne.channels import (
+    combine_channels,
+    equalize_channels,
+    find_ch_adjacency,
+    get_builtin_ch_adjacencies,
+    make_1020_channel_selections,
+    read_ch_adjacency,
+    read_custom_montage,
+    rename_channels,
+)
+from mne.channels.channels import (
+    _BUILTIN_CHANNEL_ADJACENCIES,
+    _BuiltinChannelAdjacency,
+    _ch_neighbor_adjacency,
+    _compute_ch_adjacency,
 )
 from mne.datasets import testing
+from mne.io import (
+    RawArray,
+    read_info,
+    read_raw_bti,
+    read_raw_ctf,
+    read_raw_eeglab,
+    read_raw_fif,
+    read_raw_kit,
+)
 from mne.parallel import parallel_func
 from mne.utils import requires_good_network
 
-io_dir = Path(__file__).parent.parent.parent / "io"
+io_dir = Path(__file__).parents[2] / "io"
 base_dir = io_dir / "tests" / "data"
 raw_fname = base_dir / "test_raw.fif"
 eve_fname = base_dir / "test-eve.fif"
@@ -288,7 +289,7 @@ def test_read_ch_adjacency(tmp_path):
     assert_equal(x[0, 1], False)
     assert_equal(x[0, 2], True)
     assert np.all(x.diagonal())
-    pytest.raises(ValueError, read_ch_adjacency, mat_fname, [0, 3])
+    pytest.raises(IndexError, read_ch_adjacency, mat_fname, [0, 3])
     ch_adjacency, ch_names = read_ch_adjacency(mat_fname, picks=[0, 2])
     assert_equal(ch_adjacency.shape[0], 2)
     assert_equal(len(ch_names), 2)
@@ -437,8 +438,8 @@ def test_1020_selection():
     raw = raw.rename_channels(dict(zip(raw.ch_names, montage.ch_names)))
     raw.set_montage(montage)
 
-    for input in ("a_string", 100, raw, [1, 2]):
-        pytest.raises(TypeError, make_1020_channel_selections, input)
+    for input_ in ("a_string", 100, raw, [1, 2]):
+        pytest.raises(TypeError, make_1020_channel_selections, input_)
 
     sels = make_1020_channel_selections(raw.info)
     # are all frontal channels placed before all occipital channels?
@@ -471,7 +472,7 @@ def test_find_ch_adjacency():
     for ch_type in ["mag", "grad", "eeg"]:
         conn, ch_names = find_ch_adjacency(raw.info, ch_type)
         # Silly test for checking the number of neighbors.
-        assert_equal(conn.getnnz(), sizes[ch_type])
+        assert_equal(conn.astype(bool).sum(), sizes[ch_type])
         assert_equal(len(ch_names), nchans[ch_type])
         kwargs = dict(exclude=())
         if ch_type in ("mag", "grad"):
@@ -484,7 +485,7 @@ def test_find_ch_adjacency():
 
     # Test computing the conn matrix with gradiometers.
     conn, ch_names = _compute_ch_adjacency(raw.info, "grad")
-    assert_equal(conn.getnnz(), 2680)
+    assert_equal(conn.astype(bool).sum(), 2680)
 
     # Test ch_type=None.
     raw.pick(picks="mag")
@@ -515,7 +516,7 @@ def test_neuromag122_adjacency():
     nm122_fname = testing_path / "misc" / "neuromag122_test_file-raw.fif"
     raw = read_raw_fif(nm122_fname)
     conn, ch_names = find_ch_adjacency(raw.info, "grad")
-    assert conn.getnnz() == 1564
+    assert conn.astype(bool).sum() == 1564
     assert len(ch_names) == 122
     assert conn.shape == (122, 122)
 
@@ -615,7 +616,7 @@ def test_equalize_channels():
     assert raw2.ch_names == ["CH1", "CH2"]
     assert_array_equal(raw2.get_data(), [[1.0], [2.0]])
     assert epochs2.ch_names == ["CH1", "CH2"]
-    assert_array_equal(epochs2.get_data(), [[[3.0], [2.0]]])
+    assert_array_equal(epochs2.get_data(copy=False), [[[3.0], [2.0]]])
     assert cov2.ch_names == ["CH1", "CH2"]
     assert cov2["bads"] == cov["bads"]
     assert ave2.ch_names == ave.ch_names

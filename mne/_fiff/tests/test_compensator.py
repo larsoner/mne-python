@@ -1,19 +1,20 @@
 # Author: Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 from pathlib import Path
 
 import numpy as np
-from numpy.testing import assert_allclose
 import pytest
+from numpy.testing import assert_allclose
 
-from mne import Epochs, read_evokeds, pick_types
-from mne._fiff.compensator import make_compensator, get_current_comp
+from mne import Epochs, pick_types, read_evokeds
+from mne._fiff.compensator import get_current_comp, make_compensator
 from mne.io import read_raw_fif
 from mne.utils import requires_mne, run_subprocess
 
-base_dir = Path(__file__).parent.parent.parent / "io" / "tests" / "data"
+base_dir = Path(__file__).parents[2] / "io" / "tests" / "data"
 ctf_comp_fname = base_dir / "test_ctf_comp_raw.fif"
 
 
@@ -87,7 +88,7 @@ def test_compensation_mne(tmp_path):
 
     def compensate_mne(fname, comp):
         """Compensate using MNE-C."""
-        tmp_fname = "%s-%d-ave.fif" % (fname.stem, comp)
+        tmp_fname = f"{fname.stem}-{comp}-ave.fif"
         cmd = [
             "mne_compensate_data",
             "--in",

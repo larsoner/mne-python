@@ -2,17 +2,18 @@
 #          Denis Engemann <denis.engemann@gmail.com>
 #          Martin Luessi <mluessi@nmr.mgh.harvard.edu>
 #
-# License: Simplified BSD
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 
-import pytest
 import matplotlib
+import pytest
 
 from mne.viz import plot_channel_labels_circle
 
 
 @pytest.mark.filterwarnings(
-    "ignore:invalid value encountered in greater_equal" ":RuntimeWarning"
+    "ignore:invalid value encountered in greater_equal:RuntimeWarning"
 )
 def test_plot_channel_labels_circle():
     """Test plotting channel labels in a circle."""

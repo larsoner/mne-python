@@ -22,17 +22,18 @@ evolution of the spatial filters.
 #         Jean-Remi King <jeanremi.king@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 # %%
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.model_selection import StratifiedKFold
 
 import mne
-from mne import io, EvokedArray
+from mne import EvokedArray, io
 from mne.datasets import sample
 from mne.decoding import EMS, compute_ems
-from sklearn.model_selection import StratifiedKFold
 
 print(__doc__)
 
@@ -64,7 +65,7 @@ epochs = mne.Epochs(
 epochs.pick("grad")
 
 # Setup the data to use it a scikit-learn way:
-X = epochs.get_data()  # The MEG data
+X = epochs.get_data(copy=False)  # The MEG data
 y = epochs.events[:, 2]  # The conditions indices
 n_epochs, n_channels, n_times = X.shape
 

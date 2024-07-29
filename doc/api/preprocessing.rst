@@ -7,13 +7,13 @@ Projections:
 .. currentmodule:: mne
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
    :template: autosummary/class_no_inherited_members.rst
 
    Projection
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    compute_proj_epochs
    compute_proj_evoked
@@ -30,7 +30,7 @@ Projections:
    :no-inherited-members:
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    Layout
    DigMontage
@@ -72,7 +72,7 @@ Projections:
    :no-inherited-members:
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    ICA
    Xdawn
@@ -93,6 +93,7 @@ Projections:
    cortical_signal_suppression
    create_ecg_epochs
    create_eog_epochs
+   find_bad_channels_lof
    find_bad_channels_maxwell
    find_ecg_events
    find_eog_events
@@ -124,7 +125,7 @@ Projections:
    :no-inherited-members:
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    optical_density
    beer_lambert_law
@@ -142,7 +143,7 @@ Projections:
    :no-inherited-members:
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    project_sensors_onto_brain
    make_montage_volume
@@ -157,11 +158,13 @@ Projections:
    :no-inherited-members:
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    Calibration
    read_eyelink_calibration
    set_channel_types_eyetrack
+   convert_units
+   get_screen_visual_angle
    interpolate_blinks
 
 EEG referencing:
@@ -169,7 +172,7 @@ EEG referencing:
 .. currentmodule:: mne
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    add_reference_channels
    set_bipolar_reference
@@ -184,7 +187,7 @@ EEG referencing:
    :no-inherited-members:
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    construct_iir_filter
    create_filter
@@ -202,7 +205,7 @@ EEG referencing:
    :no-inherited-members:
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    compute_chpi_amplitudes
    compute_chpi_snr
@@ -226,7 +229,7 @@ EEG referencing:
    :no-inherited-members:
 
 .. autosummary::
-   :toctree: generated/
+   :toctree: ../generated/
 
    Transform
    quat_to_rot

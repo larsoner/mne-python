@@ -1,4 +1,5 @@
-# -*- coding: utf-8 -*-
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 r"""
 .. _tut-importing-eyetracking-data:
 
@@ -78,8 +79,8 @@ at about 8-seconds).
 """
 
 # %%
-from mne.io import read_raw_eyelink
 from mne.datasets import misc
+from mne.io import read_raw_eyelink
 
 # %%
 fpath = misc.data_path() / "eyetracking" / "eyelink"

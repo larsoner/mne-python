@@ -12,14 +12,14 @@ Compute a Recursively Applied and Projected MUltiple Signal Classification
 # Author: Yousra Bekhti <yousra.bekhti@gmail.com>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 # %%
 
 import mne
-
-from mne.datasets import sample
 from mne.beamformer import rap_music
-from mne.viz import plot_dipole_locations, plot_dipole_amplitudes
+from mne.datasets import sample
+from mne.viz import plot_dipole_amplitudes, plot_dipole_locations
 
 print(__doc__)
 

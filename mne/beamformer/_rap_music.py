@@ -4,16 +4,17 @@
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #
 # License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 import numpy as np
 from scipy import linalg
 
+from .._fiff.pick import pick_channels_forward, pick_info
 from ..fixes import _safe_svd
-from ..forward import is_fixed_orient, convert_forward_solution
-from .._fiff.pick import pick_info, pick_channels_forward
+from ..forward import convert_forward_solution, is_fixed_orient
 from ..inverse_sparse.mxne_inverse import _make_dipoles_sparse
 from ..minimum_norm.inverse import _log_exp_var
-from ..utils import logger, verbose, _check_info_inv, fill_doc
+from ..utils import _check_info_inv, fill_doc, logger, verbose
 from ._compute_beamformer import _prepare_beamformer_input
 
 
@@ -109,9 +110,9 @@ def _apply_rap_music(
         oris[k] = source_ori
         poss[k] = source_pos
 
-        logger.info("source %s found: p = %s" % (k + 1, source_idx))
+        logger.info(f"source {k + 1} found: p = {source_idx}")
         if n_orient == 3:
-            logger.info("ori = %s %s %s" % tuple(oris[k]))
+            logger.info("ori = {} {} {}".format(*tuple(oris[k])))
 
         projection = _compute_proj(A[:, : k + 1])
         G_proj = np.einsum("ab,bso->aso", projection, G)

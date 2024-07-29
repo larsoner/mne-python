@@ -5,6 +5,8 @@
 #          Matti Hämäläinen <msh@nmr.mgh.harvard.edu>
 #
 #          simplified bsd-3 license
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 """Create high-resolution head surfaces for coordinate alignment.
 
@@ -15,6 +17,7 @@ Examples
     $ mne make_scalp_surfaces --overwrite --subject sample
 
 """
+
 import os
 import sys
 
@@ -24,7 +27,7 @@ from mne.bem import make_scalp_surfaces
 
 def run():
     """Run command."""
-    from mne.commands.utils import get_optparser, _add_verbose_flag
+    from mne.commands.utils import _add_verbose_flag, get_optparser
 
     parser = get_optparser(__file__)
     subjects_dir = mne.get_config("SUBJECTS_DIR")
@@ -74,7 +77,7 @@ def run():
         "-n",
         "--no-decimate",
         dest="no_decimate",
-        help="Disable medium and sparse decimations " "(dense only)",
+        help="Disable medium and sparse decimations (dense only)",
         action="store_true",
     )
     _add_verbose_flag(parser)

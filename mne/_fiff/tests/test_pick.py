@@ -1,50 +1,52 @@
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 from copy import deepcopy
 from pathlib import Path
 
-import pytest
 import numpy as np
+import pytest
 from numpy.testing import assert_array_equal
 
 from mne import (
-    pick_channels_regexp,
-    pick_types,
     Epochs,
-    read_forward_solution,
-    rename_channels,
-    pick_info,
-    pick_channels,
-    create_info,
-    make_ad_hoc_cov,
     channel_indices_by_type,
     channel_type,
-    pick_types_forward,
+    create_info,
+    make_ad_hoc_cov,
+    pick_channels,
     pick_channels_cov,
-)
-from mne.io import (
-    read_raw_fif,
-    RawArray,
-    read_raw_bti,
-    read_raw_kit,
-    read_info,
-)
-from mne.channels import make_standard_montage
-from mne.preprocessing import compute_current_source_density
-from mne._fiff.pick import (
-    _picks_by_type,
-    _picks_to_idx,
-    _contains_ch_type,
-    _DATA_CH_TYPES_SPLIT,
-    get_channel_type_constants,
+    pick_channels_regexp,
+    pick_info,
+    pick_types,
+    pick_types_forward,
+    read_forward_solution,
+    rename_channels,
 )
 from mne._fiff.constants import FIFF
+from mne._fiff.pick import (
+    _DATA_CH_TYPES_SPLIT,
+    _contains_ch_type,
+    _picks_by_type,
+    _picks_to_idx,
+    get_channel_type_constants,
+)
+from mne.channels import make_standard_montage
 from mne.datasets import testing
-from mne.utils import catch_logging, assert_object_equal
+from mne.io import (
+    RawArray,
+    read_info,
+    read_raw_bti,
+    read_raw_fif,
+    read_raw_kit,
+)
+from mne.preprocessing import compute_current_source_density
+from mne.utils import assert_object_equal, catch_logging
 
 data_path = testing.data_path(download=False)
 fname_meeg = data_path / "MEG" / "sample" / "sample_audvis_trunc-meg-eeg-oct-4-fwd.fif"
 fname_mc = data_path / "SSS" / "test_move_anon_movecomp_raw_sss.fif"
 
-io_dir = Path(__file__).parent.parent.parent / "io"
+io_dir = Path(__file__).parents[2] / "io"
 ctf_fname = io_dir / "tests" / "data" / "test_ctf_raw.fif"
 fif_fname = io_dir / "tests" / "data" / "test_raw.fif"
 
@@ -520,8 +522,7 @@ def test_picks_by_channels():
     # duplicate check
     names = ["MEG 002", "MEG 002"]
     assert len(pick_channels(raw.info["ch_names"], names, ordered=False)) == 1
-    with pytest.warns(FutureWarning, match="ordered=False"):
-        assert len(raw.copy().pick_channels(names)[0][0]) == 1  # legacy method OK here
+    assert len(raw.copy().pick_channels(names, ordered=False)[0][0]) == 1
 
     # missing ch_name
     bad_names = names + ["BAD"]
@@ -556,11 +557,17 @@ def test_clean_info_bads():
     # simulate the bad channels
     raw.info["bads"] = eeg_bad_ch + meg_bad_ch
 
+    assert len(raw.info["projs"]) == 3
+    raw.set_eeg_reference(projection=True)
+    assert len(raw.info["projs"]) == 4
+
     # simulate the call to pick_info excluding the bad eeg channels
     info_eeg = pick_info(raw.info, picks_eeg)
+    assert len(info_eeg["projs"]) == 1
 
     # simulate the call to pick_info excluding the bad meg channels
     info_meg = pick_info(raw.info, picks_meg)
+    assert len(info_meg["projs"]) == 3
 
     assert info_eeg["bads"] == eeg_bad_ch
     assert info_meg["bads"] == meg_bad_ch
@@ -596,9 +603,9 @@ def test_picks_to_idx():
     # Name indexing
     assert_array_equal([2], _picks_to_idx(info, info["ch_names"][2]))
     assert_array_equal(np.arange(5, 9), _picks_to_idx(info, info["ch_names"][5:9]))
-    with pytest.raises(ValueError, match="must be >= "):
+    with pytest.raises(IndexError, match="must be >= "):
         _picks_to_idx(info, -len(picks) - 1)
-    with pytest.raises(ValueError, match="must be < "):
+    with pytest.raises(IndexError, match="must be < "):
         _picks_to_idx(info, len(picks))
     with pytest.raises(ValueError, match="could not be interpreted"):
         _picks_to_idx(info, ["a", "b"])

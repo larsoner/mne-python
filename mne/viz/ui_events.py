@@ -9,15 +9,19 @@ stay in-sync.
 
 Authors: Marijn van Vliet <w.m.vanvliet@gmail.com>
 """
+
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
+from __future__ import annotations  # only needed for Python ≤ 3.9
+
 import contextlib
-from dataclasses import dataclass
-from typing import Optional, List, Union
-import weakref
 import re
+import weakref
+from dataclasses import dataclass
 
 from matplotlib.colors import Colormap
 
-from ..utils import warn, fill_doc, _validate_type, logger, verbose
+from ..utils import _validate_type, fill_doc, logger, verbose, warn
 
 # Global dict {fig: channel} containing all currently active event channels.
 _event_channels = weakref.WeakKeyDictionary()
@@ -142,12 +146,12 @@ class ColormapRange(UIEvent):
     """
 
     kind: str
-    ch_type: Optional[str] = None
-    fmin: Optional[float] = None
-    fmid: Optional[float] = None
-    fmax: Optional[float] = None
-    alpha: Optional[bool] = None
-    cmap: Optional[Union[Colormap, str]] = None
+    ch_type: str | None = None
+    fmin: float | None = None
+    fmid: float | None = None
+    fmax: float | None = None
+    alpha: bool | None = None
+    cmap: Colormap | str | None = None
 
 
 @dataclass
@@ -203,7 +207,7 @@ class Contours(UIEvent):
     """
 
     kind: str
-    contours: List[str]
+    contours: list[str]
 
 
 def _get_event_channel(fig):
@@ -225,6 +229,7 @@ def _get_event_channel(fig):
         channel.
     """
     import matplotlib
+
     from ._brain import Brain
     from .evoked_field import EvokedField
 
@@ -460,8 +465,8 @@ def disable_ui_events(fig):
 
 def _cleanup_agg():
     """Call close_event for Agg canvases to help our doc build."""
-    import matplotlib.figure
     import matplotlib.backends.backend_agg
+    import matplotlib.figure
 
     for key in list(_event_channels):  # we might remove keys as we go
         if isinstance(key, matplotlib.figure.Figure):

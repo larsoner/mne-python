@@ -1,6 +1,7 @@
 # Authors: Alex Rockhill <aprockhill@mailbox.org>
 #
-# License: Simplified BSD
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
 
 from pathlib import Path
 
@@ -117,10 +118,12 @@ def test_widget_abstraction_pyvistaqt(renderer_pyvistaqt):
 def test_widget_abstraction_notebook(renderer_notebook, nbexec):
     """Test the GUI widgets abstraction in notebook."""
     from pathlib import Path
+
+    from IPython import get_ipython
+
     from mne.viz import set_3d_backend
     from mne.viz.backends.renderer import _get_backend
     from mne.viz.backends.tests.test_abstract import _do_widget_tests
-    from IPython import get_ipython
 
     set_3d_backend("notebook")
     backend = _get_backend()
