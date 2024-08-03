@@ -55,9 +55,10 @@ mne/viz/_brain/tests/.ipynb_checkpoints
 
 dist/
 doc/_build/
-doc/api/generated/
+doc/generated/
 doc/auto_examples/
 doc/auto_tutorials/
+doc/modules/generated/
 doc/sphinxext/cachedir
 tutorials/intro/report.h5
 tutorials/intro/report_partial.hdf5
