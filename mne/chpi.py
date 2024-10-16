@@ -119,7 +119,8 @@ def read_head_pos(fname):
     return data
 
 
-def write_head_pos(fname, pos):
+@verbose
+def write_head_pos(fname, pos, *, overwrite=False, verbose=None):
     """Write MaxFilter-formatted head position parameters.
 
     Parameters
@@ -128,6 +129,10 @@ def write_head_pos(fname, pos):
         The filename to write.
     pos : array, shape (N, 10)
         The position and quaternion parameters from cHPI fitting.
+    %(overwrite)s
+
+        .. versionadded:: 1.9
+    %(verbose)s
 
     See Also
     --------
@@ -138,7 +143,7 @@ def write_head_pos(fname, pos):
     -----
     .. versionadded:: 0.12
     """
-    _check_fname(fname, overwrite=True)
+    _check_fname(fname, overwrite=overwrite)
     pos = np.array(pos, np.float64)
     if pos.ndim != 2 or pos.shape[1] != 10:
         raise ValueError("pos must be a 2D array of shape (N, 10)")
@@ -436,7 +441,14 @@ def _get_hpi_initial_fit(info, adjust=False, verbose=None):
 
     # zero-based indexing, dig->info
     # CTF does not populate some entries so we use .get here
-    pos_order = hpi_result.get("order", np.arange(1, len(hpi_dig) + 1)) - 1
+    default_order = np.arange(1, len(hpi_dig) + 1)
+    pos_order = np.array(hpi_result.get("order", default_order))
+    if not np.array_equal(sorted(pos_order), default_order):
+        raise RuntimeError(
+            f"hpi_result['order'] should contain integers from 1 to {len(hpi_dig) + 1},"
+            f" got: {pos_order}"
+        )
+    pos_order -= 1
     used = hpi_result.get("used", np.arange(len(hpi_dig)))
     dist_limit = hpi_result.get("dist_limit", 0.005)
     good_limit = hpi_result.get("good_limit", 0.98)
@@ -452,7 +464,7 @@ def _get_hpi_initial_fit(info, adjust=False, verbose=None):
         f"{' '.join(str(o + 1) for o in pos_order)}"
     )
     logger.debug(
-        f"HPIFIT: {len(used)} coils accepted: {' '.join(str(h) for h in used)}"
+        f"HPIFIT: {len(used)} coils accepted: {' '.join(str(h + 1) for h in used)}"
     )
     hpi_rrs = np.array([d["r"] for d in hpi_dig])[pos_order]
     assert len(hpi_rrs) >= 3
@@ -472,22 +484,24 @@ def _get_hpi_initial_fit(info, adjust=False, verbose=None):
         for moment in hpi_result["moments"]:
             logger.debug(f"{moment[0]:g} {moment[1]:g} {moment[2]:g}")
     errors = np.linalg.norm(hpi_rrs - hpi_rrs_fit, axis=1)
-    logger.debug(f"HPIFIT errors:  {', '.join(f'{1000 * e:0.1f}' for e in errors)} mm.")
+    logger.info(f"HPIFIT errors:  {', '.join(f'{1000 * e:0.1f}' for e in errors)} mm.")
     if errors.sum() < len(errors) * dist_limit:
         logger.info("HPI consistency of isotrak and hpifit is OK.")
     elif not adjust and (len(used) == len(hpi_dig)):
         warn("HPI consistency of isotrak and hpifit is poor.")
     else:
+        warn_msgs = []
         # adjust HPI coil locations using the hpifit transformation
+        warn_msgs = list()
         for hi, (err, r_fit) in enumerate(zip(errors, hpi_rrs_fit)):
             # transform to head frame
             d = 1000 * err
             if not adjust:
                 if err >= dist_limit:
-                    warn(
+                    warn_msgs += [
                         f"Discrepancy of HPI coil {hi + 1} isotrak and hpifit is "
                         f"{d:.1f} mm!"
-                    )
+                    ]
             elif hi + 1 not in used:
                 if goodness[hi] >= good_limit:
                     logger.info(
@@ -495,10 +509,17 @@ def _get_hpi_initial_fit(info, adjust=False, verbose=None):
                     )
                     hpi_rrs[hi] = r_fit
                 else:
-                    warn(
+                    warn_msgs += [
                         f"Discrepancy of HPI coil {hi + 1} isotrak and hpifit of "
                         f"{d:.1f} mm was not adjusted!"
-                    )
+                    ]
+            elif err >= dist_limit:  # adjust=True and coil was used but it was off
+                logger.info(
+                    f"Note: HPI coil {hi + 1} isotrak is not adjusted by "
+                    f"{d:.1f} mm as it was used!"
+                )
+        if warn_msgs:
+            warn("\n".join(warn_msgs))
     logger.debug(
         f"HP fitting limits: err = {1000 * dist_limit:.1f} mm, gval = {good_limit:.3f}."
     )
