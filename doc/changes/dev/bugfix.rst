@@ -1,0 +1,1 @@
+:func:`mne.chpi.filter_chpi` now smoothly interpolates the fitted cHPI/line amplitude envelope between fitting windows (new default ``interp="hann"``), avoiding the zero-order-hold step discontinuities (and the resulting broadband spectral leakage) of the previous subtraction; pass ``interp=None`` for the old behavior, by `Eric Larson`_.
