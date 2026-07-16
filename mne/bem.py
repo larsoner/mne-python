@@ -40,6 +40,8 @@ from .surface import (
     _fast_cross_nd_sum,
     _get_ico_surface,
     _get_solids,
+    _read_vtk_mesh,
+    _write_vtk_mesh,
     complete_surface_info,
     decimate_surface,
     read_surface,
@@ -47,7 +49,7 @@ from .surface import (
     transform_surface_to,
     write_surface,
 )
-from .transforms import Transform, _ensure_trans, apply_trans
+from .transforms import Transform, _ensure_trans, apply_trans, read_ras_mni_t
 from .utils import (
     _check_fname,
     _check_freesurfer_home,
@@ -59,6 +61,7 @@ from .utils import (
     _on_missing,
     _path_like,
     _pl,
+    _require_version,
     _TempDir,
     _validate_type,
     _verbose_safe_false,
@@ -68,6 +71,7 @@ from .utils import (
     run_subprocess,
     verbose,
     warn,
+    wrapped_stdout,
 )
 from .viz.misc import plot_bem
 
@@ -1376,6 +1380,219 @@ def make_watershed_bem(
     logger.info(f"Created {fname_head}\n\nComplete.")
 
 
+def _show_bem(show, subject, subjects_dir):
+    if show:
+        plot_bem(
+            subject=subject,
+            subjects_dir=subjects_dir,
+            orientation="coronal",
+            slices=None,
+            show=True,
+        )
+
+
+@verbose
+def make_fsl_bem(
+    subject,
+    subjects_dir=None,
+    *,
+    overwrite=False,
+    volume="T1",
+    brainmask=None,
+    smooth=5,
+    fraction=None,
+    talairach=True,
+    show=False,
+    verbose=None,
+):
+    """Create BEM surfaces using FSL.
+
+    Parameters
+    ----------
+    subject : str
+        Subject name.
+    %(subjects_dir)s
+    overwrite : bool
+        Write over existing files.
+    volume : str
+        The volume from the subject's ``mri`` directory to use. Defaults to
+        ``"T1"``.
+    brainmask : None | str
+        Image to use as a brainmask. Can be useful when ``bet`` does an
+        inadequate job of extracting the initial brain mesh. Can be an absolute
+        path or a filename relative to the subject's ``mri`` directory, for
+        example ``"brainmask.mgz"`` to use the FreeSurfer-computed brainmask.
+    smooth : float
+        Amount to smooth the ``brainmask`` (in voxels). Larger values produce
+        smoother surfaces. 0 will not smooth at all.
+        Only used when ``brainmask`` is not None.
+    fraction : float | None
+        Fractional intensity threshold, smaller values give larger brain
+        outline estimates. None (default) will use 0.5 for ``bet`` and
+        0.55 for when ``smooth`` is used with ``brainmask``.
+    talairach : bool
+        If True (default), use the talairach transform computed by FreeSurfer
+        rather than computing a new one using FLIRT.
+    show : bool
+        Show surfaces to visually inspect all three BEM surfaces (recommended).
+    %(verbose)s
+
+    See Also
+    --------
+    mne.viz.plot_bem
+    mne.bem.make_watershed_bem
+
+    Notes
+    -----
+    This uses `bet and betsurf
+    <https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/BET/UserGuide>`__, which are
+    distributed as part of `FSL
+    <https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FslInstallation>`__.
+
+    .. versionadded:: 1.13
+    """
+    from scipy import ndimage
+
+    _validate_type(brainmask, (None, str), "brainmask")
+    _validate_type(fraction, (None, "numeric"), "fraction")
+    if fraction is None:
+        fraction = 0.5 if brainmask is None else 0.55
+    _validate_type(smooth, "numeric", "smooth")
+    nib = _import_nibabel("create BEM surfaces using fsl")
+    env, mri_dir, bem_dir = _prepare_env(subject, subjects_dir, api="fsl")
+    subjects_dir = env["SUBJECTS_DIR"]
+    tempdir = _TempDir()  # fsl creates some random junk in CWD
+    run_env = partial(run_subprocess, env=env, cwd=tempdir)
+    fname = op.join(mri_dir, volume)
+    if not fname.endswith(".mgz"):
+        fname += ".mgz"
+    os.makedirs(bem_dir, exist_ok=True)
+    _check_fname(fname, overwrite="read", must_exist=True, name="MRI data")
+    # betsurf writes files with these suffixes, we map them to FreeSurfer names
+    bet_map = dict(
+        brain="",
+        outer_skin="_outskin",
+        inner_skull="_inskull",
+        outer_skull="_outskull",
+    )
+    meta = _extract_volume_info(fname)
+    img = nib.load(fname)
+    xfm = img.header.get_vox2ras_tkr()
+    # This all-caps naming is obnoxious but it helps match the bet scripts
+    IN = op.join(tempdir, op.splitext(op.basename(fname))[0] + ".nii.gz")
+    nib.save(img, IN)
+    OUT = op.join(tempdir, "stripped")
+    FSLDIR = env["FSLDIR"]
+    env["FSLOUTPUTTYPE"] = "NIFTI_GZ"
+    pre = f"Registering {subject} {volume} to MNI152 using "
+    OUT_reg = f"{OUT}_tmp_T1_to_std.mat"
+    if talairach:
+        logger.info(pre + "talairach.xfm")
+        ras_mni_t = read_ras_mni_t(subject, subjects_dir)["trans"]
+        # $FREESURFER_HOME/average/mni152.register.dat (all RAS) is:
+        mni_mni152_t = np.array(
+            [
+                [9.975314e-01, -7.324822e-03, 1.760415e-02, 9.570923e-01],
+                [-1.296475e-02, -9.262221e-03, 9.970638e-01, -1.781596e01],
+                [-1.459537e-02, -1.000945e00, 2.444772e-03, -1.854964e01],
+                [0, 0, 0, 1],
+            ]
+        )
+        ras_mni152_t = mni_mni152_t @ ras_mni_t
+        # From https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FLIRT/FAQ#Can_I_register_to_an_image_but_use_higher.2Flower_resolution_.28voxel_size.29.3F  # noqa: E501
+        # "The appropriate offset to keep the COV constant is half of the
+        # difference in the respective FOVs (in mm)."
+        fov = np.diff(
+            apply_trans(img.affine, np.array([[1, 1, 1], np.array(img.shape)])), axis=0
+        )[0]
+        # the MNI152 FOV below was calculated as above using the image
+        # $FSLDIR/data/standard/MNI152_T1_2mm.nii.gz. The extra multiplication
+        # is necessary (probably) because of the data orientation of MNI152
+        # which is negative along the first axis.
+        delta_fov = ((abs(fov) - [180, 216, 180]) / 2) * [-1, 1, 1]
+        ras_mni152_t[:3, 3] += delta_fov
+        np.savetxt(OUT_reg, ras_mni152_t.astype(np.float32), delimiter="  ")
+    else:
+        logger.info(pre + "FLIRT")
+        with wrapped_stdout(indent="    "):
+            run_env(
+                [
+                    f"{FSLDIR}/bin/flirt",
+                    "-ref",
+                    f"{FSLDIR}/data/standard/MNI152_T1_2mm",
+                    "-in",
+                    IN,
+                    "-omat",
+                    OUT_reg,
+                ]
+            )
+    OUT_brain_mesh = f"{OUT}_mesh.vtk"
+    if brainmask is not None:
+        logger.info(f"Tessellating brain mesh using {brainmask}")
+        _require_version("skimage", "tessellate a brainmask", "0.13")
+        from skimage import measure
+
+        brainmask = str(brainmask)
+        if op.splitext(brainmask)[1] == "":
+            brainmask = brainmask + ".mgz"
+        if not op.isfile(brainmask) and op.isfile(op.join(mri_dir, brainmask)):
+            brainmask = op.join(mri_dir, brainmask)
+        mask_img = nib.load(brainmask)
+        img_data = np.asarray(mask_img.dataobj).astype(bool).astype(float)
+        if smooth > 0:
+            logger.info(f"    Gaussian smoothing ({smooth} voxels)")
+            img_data = ndimage.gaussian_filter(img_data, smooth, mode="constant")
+            img_data = img_data > fraction
+        logger.info("    Marching cubes")
+        rr, tris = measure.marching_cubes(
+            img_data, spacing=(1, 1, 1), allow_degenerate=False
+        )[:2]
+        logger.info(f"    Decimating {len(tris)} triangles to 5120")
+        rr, tris = decimate_surface(rr, tris, 5120)
+        _write_vtk_mesh(OUT_brain_mesh, rr, tris)
+    else:
+        logger.info("Extracting brain mesh using bet2")
+        with wrapped_stdout(indent="    "):
+            run_env(
+                [
+                    f"{FSLDIR}/bin/bet2",
+                    IN,
+                    OUT,
+                    "-e",
+                    "-n",
+                    "-v",
+                    "-f",
+                    str(fraction),
+                ]
+            )
+    with wrapped_stdout(indent="    "):
+        logger.info("Running betsurf to extract skull and outer skin")
+        run_env(
+            [
+                f"{FSLDIR}/bin/betsurf",
+                "--t1only",
+                "-o",
+                IN,
+                OUT_brain_mesh,
+                OUT_reg,
+                OUT,
+            ]
+        )
+    for fs_name, bet_name in bet_map.items():
+        rr, tris = _read_vtk_mesh(f"{OUT}{bet_name}_mesh.vtk")
+        rr = apply_trans(xfm, rr)
+        write_surface(
+            op.join(bem_dir, f"{fs_name}.surf"),
+            rr,
+            tris,
+            volume_info=meta,
+            overwrite=overwrite,
+            verbose=False,
+        )
+    logger.info("[done]")
+    _show_bem(show, subject, subjects_dir)
+
+
 def _extract_volume_info(mgz):
     """Extract volume info from a mgz file."""
     nib = _import_nibabel()
@@ -1383,8 +1600,8 @@ def _extract_volume_info(mgz):
     version = header["version"]
     vol_info = dict()
     if version == 1:
-        version = f"{version}  # volume info valid"
-        vol_info["valid"] = version
+        vol_info["head"] = np.array([2, 0, 20], np.int32)
+        vol_info["valid"] = f"{version}  # volume info valid"
         vol_info["filename"] = mgz
         vol_info["volume"] = header["dims"][:3]
         vol_info["voxelsize"] = header["delta"]
@@ -1892,11 +2109,10 @@ def _write_bem_solution_fif(fname, bem):
 # Create 3-Layers BEM model from Flash MRI images
 
 
-def _prepare_env(subject, subjects_dir):
+def _prepare_env(subject, subjects_dir, api="freesurfer"):
     """Prepare an env object for subprocess calls."""
+    _check_option("api", api, ("freesurfer", "fsl"))
     env = os.environ.copy()
-
-    fs_home = _check_freesurfer_home()
 
     _validate_type(subject, "str")
 
@@ -1904,7 +2120,13 @@ def _prepare_env(subject, subjects_dir):
     subject_dir = subjects_dir / subject
     if not subject_dir.is_dir():
         raise RuntimeError(f'Could not find the subject data directory "{subject_dir}"')
-    env.update(SUBJECT=subject, SUBJECTS_DIR=str(subjects_dir), FREESURFER_HOME=fs_home)
+    env.update(SUBJECT=subject, SUBJECTS_DIR=str(subjects_dir))
+    if api == "freesurfer":
+        env["FREESURFER_HOME"] = _check_freesurfer_home()
+    else:
+        assert api == "fsl"
+        if "FSLDIR" not in env:
+            raise RuntimeError("FSLDIR is not set in the environment")
     mri_dir = subject_dir / "mri"
     bem_dir = subject_dir / "bem"
     return env, mri_dir, bem_dir

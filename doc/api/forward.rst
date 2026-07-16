@@ -62,6 +62,7 @@ Forward Modeling
    get_fitting_dig
    make_watershed_bem
    make_flash_bem
+   make_fsl_bem
    make_scalp_surfaces
    convert_flash_mris
    distance_to_bem

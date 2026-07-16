@@ -32,6 +32,7 @@ from mne.commands import (
     mne_compute_proj_eog,
     mne_coreg,
     mne_flash_bem,
+    mne_fsl_bem,
     mne_kit2fiff,
     mne_make_scalp_surfaces,
     mne_prepare_bem_model,
@@ -52,6 +53,7 @@ from mne.utils import (
     _record_warnings,
     _stamp_to_dt,
     requires_freesurfer,
+    requires_fsl,
     requires_mne,
 )
 
@@ -384,6 +386,34 @@ def test_flash_bem(tmp_path):
         rr_c, tris_c = read_surface(op.join(subjects_dir, "sample", "bem", f"{s}.surf"))
         assert_allclose(rr, rr_c, **kwargs)
         assert_allclose(tris, tris_c, **kwargs)
+
+
+@pytest.mark.slowtest
+@requires_fsl
+@testing.requires_testing_data
+def test_fsl_bem(tmp_path):
+    """Test mne fsl_bem."""
+    pytest.importorskip("nibabel")
+    check_usage(mne_fsl_bem)
+    tempdir = str(tmp_path)
+    mridata_path_new = op.join(tempdir, "sample", "mri")
+    os.makedirs(op.join(mridata_path_new, "transforms"))
+    shutil.copyfile(
+        op.join(subjects_dir, "sample", "mri", "T1.mgz"),
+        op.join(mridata_path_new, "T1.mgz"),
+    )
+    # the default talairach path needs the FreeSurfer Talairach transform
+    shutil.copyfile(
+        op.join(subjects_dir, "sample", "mri", "transforms", "talairach.xfm"),
+        op.join(mridata_path_new, "transforms", "talairach.xfm"),
+    )
+    with ArgvSetter(("-d", tempdir, "-s", "sample", "-o")):
+        mne_fsl_bem.run()
+    for s in ("brain", "outer_skin", "outer_skull", "inner_skull"):
+        rr, tris = read_surface(op.join(tempdir, "sample", "bem", f"{s}.surf"))
+        assert_equal(len(tris), 5120)
+        assert_equal(tris.min(), 0)
+        assert_equal(rr.shape[0], tris.max() + 1)
 
 
 @testing.requires_testing_data

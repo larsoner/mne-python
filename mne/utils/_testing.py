@@ -10,7 +10,7 @@ import sys
 import tempfile
 import traceback
 from functools import wraps
-from shutil import rmtree
+from shutil import rmtree, which
 from unittest import SkipTest
 
 import numpy as np
@@ -99,6 +99,14 @@ def requires_freesurfer(arg):
         return pytest.mark.skipif(not has_freesurfer(), reason="Requires Freesurfer")(
             arg
         )
+
+
+def requires_fsl(func):
+    """Require FSL (checks for FSLDIR and the betsurf command)."""
+    import pytest
+
+    skip = "FSLDIR" not in os.environ or which("betsurf") is None
+    return pytest.mark.skipif(skip, reason="Requires FSL (betsurf)")(func)
 
 
 def requires_good_network(func):

@@ -27,8 +27,10 @@ from mne.surface import (
     _normal_orth,
     _project_onto_surface,
     _read_patch,
+    _read_vtk_mesh,
     _tessellate_sphere,
     _voxel_neighbors,
+    _write_vtk_mesh,
     fast_cross_3d,
     get_head_surf,
     get_meg_helmet_surf,
@@ -366,3 +368,26 @@ def test_project_onto_surface(method, ret_nn):
             atol=0.05,  # ico > 3 would be even better tol
             err_msg=f"{kind} not in same direction as locs for {method}",
         )
+
+
+@pytest.mark.parametrize(
+    "surface",
+    [
+        "random",
+        pytest.param("inner_skull", marks=testing._pytest_mark()),
+    ],
+)
+def test_vtk_mesh_io(surface, tmp_path):
+    """Test reading and writing VTK meshes."""
+    if surface == "random":
+        rng = np.random.RandomState(0)
+        rr = rng.randn(100, 3) * 1000
+        tris = rng.choice(100, (256, 3)).astype(np.int64)
+    else:
+        assert surface == "inner_skull"
+        rr, tris = read_surface(subjects_dir / "sample" / "bem" / "inner_skull.surf")
+    fname = tmp_path / "test.vtk"
+    _write_vtk_mesh(fname, rr, tris)
+    rr_read, tris_read = _read_vtk_mesh(fname)
+    assert_allclose(rr_read, rr, atol=1e-6)
+    assert_array_equal(tris_read, tris)

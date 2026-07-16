@@ -2320,3 +2320,59 @@ def _voxel_neighbors(
                 break
         neighbors = next_neighbors  # start again checking all new neighbors
     return voxels
+
+
+def _read_vtk_mesh(fname):
+    """Read a mesh from a legacy ASCII VTK PolyData file."""
+    header = dict()
+    rr = tris = None
+    with open(fname) as fid:
+        for key, opts in (
+            ["kind", ("surface file",)],
+            ["encoding", ("ASCII", "UTF8")],
+            ["dataset", ("DATASET POLYDATA",)],
+        ):
+            while True:
+                line = fid.readline()
+                _validate_type(line, str, "line in VTK file")
+                if line.startswith("#"):
+                    continue
+                got = line.strip()
+                _check_option(key, got, opts)
+                header[key] = got
+                break
+        while rr is None or tris is None:
+            line = fid.readline()
+            _validate_type(line, str, "line in VTK file")
+            which, n = line.strip().lower().split()[:2]
+            n = int(n)
+            dtype = dict(points=float).get(which, int)
+            data = np.genfromtxt(fid, max_rows=n, dtype=dtype)
+            if which == "points":
+                rr = data
+                assert rr.shape == (n, 3)
+            elif which == "polygons":
+                tris = data
+                assert tris.shape == (n, 4)
+                tris = tris[:, 1:]  # cut off leading 3's
+    _validate_type(rr, np.ndarray, "rr in VTK file")
+    _validate_type(tris, np.ndarray, "tris in VTK file")
+    return rr, tris
+
+
+def _write_vtk_mesh(fname, rr, tris):
+    """Write a mesh to a legacy ASCII VTK PolyData file."""
+    assert rr.ndim == 2 and rr.shape[1] == 3
+    assert tris.ndim == 2 and tris.shape[1] == 3
+    tris = np.pad(tris, ((0, 0), (1, 0)), "constant", constant_values=3)
+    with open(fname, "w") as fid:
+        fid.write(
+            "# vtk DataFile Version 3.0\n"
+            "surface file\n"
+            "ASCII\n"
+            "DATASET POLYDATA\n"
+            f"POINTS {len(rr)}  float\n"
+        )
+        np.savetxt(fid, rr, fmt="%0.6f", delimiter=" ")
+        fid.write(f"POLYGONS {len(tris)} {tris.size}\n")
+        np.savetxt(fid, tris, fmt="%d", delimiter=" ")

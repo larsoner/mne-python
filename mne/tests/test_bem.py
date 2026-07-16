@@ -10,7 +10,7 @@ from shutil import copy
 
 import numpy as np
 import pytest
-from numpy.testing import assert_allclose, assert_equal
+from numpy.testing import assert_allclose, assert_array_equal, assert_equal
 
 import mne
 from mne import (
@@ -32,18 +32,20 @@ from mne.bem import (
     _assert_inside,
     _bem_find_surface,
     _check_surface_size,
+    _extract_volume_info,
     _get_ico_map,
     _ico_downsample,
     _order_surfaces,
     distance_to_bem,
     fit_sphere_to_headshape,
+    make_fsl_bem,
     make_scalp_surfaces,
 )
 from mne.datasets import testing
 from mne.io import read_info
 from mne.surface import _get_ico_surface, read_surface
 from mne.transforms import translation
-from mne.utils import _record_warnings, catch_logging, check_version
+from mne.utils import _record_warnings, catch_logging, check_version, requires_fsl
 
 fname_raw = Path(__file__).parents[1] / "io" / "tests" / "data" / "test_raw.fif"
 subjects_dir = testing.data_path(download=False) / "subjects"
@@ -624,3 +626,54 @@ def test_distance_to_bem(bem_type, n_pos):
         assert isinstance(dist, np.ndarray)
 
     assert_allclose(dist, true_dist, rtol=1e-6, atol=1e-6)
+
+
+@testing.requires_testing_data
+def test_extract_volume_info():
+    """Test that _extract_volume_info matches surface metadata."""
+    pytest.importorskip("nibabel")
+    subject = "sample"  # fsaverage is a bit wacky
+    subj_dir = subjects_dir / subject
+    vol_info = _extract_volume_info(subj_dir / "mri" / "T1.mgz")
+    _, _, meta = read_surface(subj_dir / "surf" / "lh.white", read_metadata=True)
+    assert set(meta) == set(vol_info)  # same keys
+    assert isinstance(meta.pop("filename"), str)
+    assert isinstance(vol_info.pop("filename"), str | Path)
+    for key in ("xras", "yras", "zras", "cras", "head"):
+        assert_allclose(meta.pop(key), vol_info.pop(key), atol=1e-7, err_msg=key)
+    # We resampled the volumes after generating surfaces so these differ
+    assert_array_equal(meta.pop("volume"), [256, 256, 256])
+    assert_array_equal(vol_info.pop("volume"), [86, 86, 86])
+    assert_array_equal(meta.pop("voxelsize"), [1.0, 1.0, 1.0])
+    assert_array_equal(vol_info.pop("voxelsize"), [3.0, 3.0, 3.0])
+    assert meta.pop("valid") == vol_info.pop("valid")
+    assert len(meta) == len(vol_info) == 0
+
+
+@testing.requires_testing_data
+@requires_fsl
+@pytest.mark.parametrize(
+    "subject",
+    [
+        pytest.param("sample", marks=pytest.mark.slowtest),  # ~10 sec
+        pytest.param("fsaverage", marks=pytest.mark.ultraslowtest),  # ~1 min
+    ],
+)
+def test_make_fsl_bem(tmp_path, subject):
+    """Test making a BEM with FSL bet/betsurf."""
+    pytest.importorskip("nibabel")
+    mri_dir = tmp_path / subject / "mri"
+    makedirs(mri_dir / "transforms")
+    copy(subjects_dir / subject / "mri" / "T1.mgz", mri_dir / "T1.mgz")
+    # the default talairach=True path needs the FreeSurfer Talairach transform
+    copy(
+        subjects_dir / subject / "mri" / "transforms" / "talairach.xfm",
+        mri_dir / "transforms" / "talairach.xfm",
+    )
+    make_fsl_bem(subject, subjects_dir=tmp_path, verbose=True)
+    bem_dir = tmp_path / subject / "bem"
+    assert bem_dir.is_dir()
+    for fname in ("brain", "inner_skull", "outer_skull", "outer_skin"):
+        rr, tris = read_surface(bem_dir / f"{fname}.surf")
+        assert rr.shape == (2562, 3)
+        assert tris.shape == (5120, 3)

@@ -1,0 +1,1 @@
+Added :func:`mne.bem.make_fsl_bem` and the ``mne fsl_bem`` command to create BEM surfaces from a T1 using FSL's ``bet`` and ``betsurf``, by `Eric Larson`_.
