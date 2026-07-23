@@ -1420,10 +1420,14 @@ def test_plotting_scalebars(browser_backend, qtbot):
     ismpl = browser_backend.name == "matplotlib"
     raw = mne.io.read_raw_fif(raw_fname).crop(0, 1).load_data()
     fig = raw.plot(butterfly=True)
+    # in butterfly mode the traces are drawn at half amplitude, so each scalebar
+    # spans half of the y-unit that its channel type occupies
+    delta = 0.25
+    if not ismpl and not check_version("mne_qt_browser", "0.7.6"):
+        delta = 0.5  # traces were drawn at full amplitude before then
     if ismpl:
         ch_types = [text.get_text() for text in fig.mne.ax_main.get_yticklabels()]
         assert ch_types == ["mag", "grad", "eeg", "eog", "stim"]
-        delta = 0.25
         offset = 0
     else:
         qtbot.wait_exposed(fig)
@@ -1434,7 +1438,6 @@ def test_plotting_scalebars(browser_backend, qtbot):
             qtbot.wait(100)  # pragma: no cover
         # the grad/mag difference here is intentional in _pg_figure.py
         assert ch_types == ["grad", "mag", "eeg", "eog", "stim"]
-        delta = 0.5  # TODO: Probably should also be 0.25?
         offset = 1
     assert ch_types.pop(-1) == "stim"
     for ci, ch_type in enumerate(ch_types, offset):
