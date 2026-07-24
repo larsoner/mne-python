@@ -134,6 +134,26 @@ jobs:
           path: ~/mne_data
       - run: bash ./tools/github_actions_download.sh
       - run: bash ./tools/github_actions_test.sh  # for some reason on macOS we need to run "bash X" in order for a failed test run to show up
+      # Diagnose silent pytest-xdist worker deaths on macOS: a JetsamEvent-*.ips
+      # report means the OS killed the worker under memory pressure (SIGKILL),
+      # while a python-*.ips crash report means a real native crash (with stack)
+      - name: Collect macOS crash diagnostics
+        if: (success() || failure()) && startsWith(matrix.os, 'macos')
+        run: |
+          set -x
+          mkdir -p crash_diagnostics/user_reports crash_diagnostics/system_reports
+          find ~/Library/Logs/DiagnosticReports -type f -mmin -90 -exec cp {} crash_diagnostics/user_reports/ \; 2>/dev/null || true
+          sudo find /Library/Logs/DiagnosticReports -type f -mmin -90 -exec cp {} crash_diagnostics/system_reports/ \; 2>/dev/null || true
+          sudo chown -R "$USER" crash_diagnostics || true
+          { sysctl hw.memsize vm.swapusage; vm_stat; } > crash_diagnostics/memory_snapshot.txt || true
+          log show --last 45m --style syslog --predicate 'eventMessage CONTAINS[c] "memorystatus" OR eventMessage CONTAINS[c] "jetsam"' > crash_diagnostics/memorystatus.log || true
+          ls -alR crash_diagnostics || true
+      - uses: actions/upload-artifact@v7
+        if: (success() || failure()) && startsWith(matrix.os, 'macos')
+        with:
+          name: crash-diagnostics-${{ matrix.os }}-${{ matrix.kind }}-${{ matrix.python }}
+          path: crash_diagnostics
+          if-no-files-found: ignore
       - uses: codecov/codecov-action@v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
