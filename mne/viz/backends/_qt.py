@@ -133,8 +133,9 @@ if (
 
 def _qcursor(name):
     # map to a native name on macOS (instead of using Qt pixmap)
-    if sys.platform == "darwin" and name in ("WaitCursor", "BusyCursor"):
-        name = "ForbiddenCursor"
+    # (temporarily disabled to diagnose the CGColorSpace crash on CI)
+    # if sys.platform == "darwin" and name in ("WaitCursor", "BusyCursor"):
+    #     name = "ForbiddenCursor"
     return QCursor(getattr(Qt, name))
 
 
