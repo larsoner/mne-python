@@ -13,6 +13,10 @@ set CG_CANARY_LOG=<path> to also append findings to a file (one shared file
 is fine; lines are tagged with the pid).
 """
 
+# Authors: The MNE-Python contributors.
+# License: BSD-3-Clause
+# Copyright the MNE-Python contributors.
+
 import os
 import sys
 
