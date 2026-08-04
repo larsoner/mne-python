@@ -679,6 +679,57 @@ def _magnetic_dipole_field_vec(rrs, coils, too_close="raise"):
     return fwd
 
 
+def _magnetic_dipole_field_vec_grad(rr, coils):
+    """Compute d/d(rr) of the magnetic dipole forward for a single position.
+
+    Returns an array of shape ``(3, 3, n_coils)``, where entry ``[i, k, c]`` is
+    the derivative of ``_magnetic_dipole_field_vec(rr[np.newaxis])[i, c]`` (the
+    field at coil ``c`` produced by a unit dipole at ``rr`` oriented along axis
+    ``i``) with respect to ``rr[k]``.
+    """
+    rmags, cosmags, ws, bins = _triage_coils(coils)
+    return _compute_mdfv_grad(rr, rmags, cosmags, ws, bins)
+
+
+@jit()
+def _compute_mdfv_grad(rr, rmags, cosmags, ws, bins):
+    """Differentiate the magnetic dipole forward w.r.t. dipole position.
+
+    With ``d = rmag - rr``, ``r = |d|`` and ``t = d @ n`` for coil normal ``n``, the
+    field of a unit dipole along axis ``i`` is ``f_i = (3 d_i t - r**2 n_i) / r**5``
+    (times ``w`` and ``_MAG_FACTOR``, then summed over integration points). Since
+    ``d`` depends on ``rr`` as ``-I``, ``df_i/drr_k = -df_i/dd_k``, i.e.
+
+        df_i/dd_k = (3 delta_ik t + 3 d_i n_k - 2 d_k n_i) / r**5
+                    - 5 d_k (3 d_i t - r**2 n_i) / r**7
+    """
+    n_coils = bins[-1] + 1
+    grad = np.zeros((3, 3, n_coils))
+    diff = rmags - rr
+    dist2 = np.sum(diff * diff, axis=1).reshape(-1, 1)
+    dist = np.sqrt(dist2)
+    r5_inv = 1.0 / (dist2 * dist2 * dist)
+    r7_inv = r5_inv / dist2
+    t = np.sum(diff * cosmags, axis=1).reshape(-1, 1)
+    ws2 = ws.reshape(-1, 1)
+    # num[:, i] = 3 * d_i * t - r ** 2 * n_i (the numerator of the forward itself)
+    num = 3 * diff * t - dist2 * cosmags
+    for ii in range(3):
+        for kk in range(3):
+            d_num = 3 * diff[:, ii : ii + 1] * cosmags[:, kk : kk + 1]
+            d_num = d_num - 2 * diff[:, kk : kk + 1] * cosmags[:, ii : ii + 1]
+            if ii == kk:
+                d_num = d_num + 3 * t
+            this = (
+                d_num * r5_inv - 5 * diff[:, kk : kk + 1] * num[:, ii : ii + 1] * r7_inv
+            )
+            # negate for d/d(rr) rather than d/d(diff)
+            this = -ws2 * this
+            grad[ii, kk] = bincount(bins, this[:, 0], n_coils)
+    grad *= _MAG_FACTOR
+    return grad
+
+
 @jit()
 def _compute_mdfv(rrs, rmags, cosmags, ws, bins, too_close):
     """Compute an MEG forward solution for a set of magnetic dipoles."""

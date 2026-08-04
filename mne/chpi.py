@@ -27,7 +27,7 @@ from functools import partial
 
 import numpy as np
 from scipy.linalg import orth
-from scipy.optimize import fmin_cobyla
+from scipy.optimize import fmin_cobyla, least_squares
 from scipy.spatial.distance import cdist
 
 from ._fiff.constants import FIFF
@@ -47,6 +47,7 @@ from .dipole import _make_guesses
 from .event import find_events
 from .fixes import _reshape_view, jit
 from .forward import _concatenate_coils, _create_meg_coils, _magnetic_dipole_field_vec
+from .forward._compute_forward import _magnetic_dipole_field_vec_grad
 from .io import BaseRaw, RawArray
 from .io.ctf.trans import _make_ctf_coord_trans_set
 from .io.kit.constants import KIT
@@ -546,8 +547,146 @@ def _magnetic_dipole_delta_multi(whitened_fwd_svd, B, B2):
     return B2 - Bm2
 
 
-def _fit_magnetic_dipole(B_orig, x0, too_close, whitener, coils, guesses):
+# The five independent components of a symmetric traceless 3x3 gradient tensor, in the
+# order (xx, yy, xy, xz, yz); zz is fixed by the trace-free condition to -(xx + yy).
+_GRAD_TENSOR_IDX = ((0, 0), (1, 1), (0, 1), (0, 2), (1, 2))
+# Length scale (m) over which the first-order field expansion is taken to hold
+_NARA_RADIUS = 0.06
+# Optimizer used by _fit_magnetic_dipole: "cobyla", "lm", or "nara" (closed-form
+# initializer followed by "lm")
+_FIT_METHOD = "lm"
+
+
+def _prep_nara(coils, scales, radius):
+    """Precompute the local field-expansion design used by the closed-form fit.
+
+    Each MEG channel measures ``sum_p w_p * n_p @ B(r_p)`` over its integration
+    points. Expanding the field to first order about a center ``rc`` as
+    ``B(r) = B0 + G (r - rc)`` makes that measurement linear in the 8 unknowns
+    ``(B0, G)``, where ``G`` is symmetric (curl-free) and traceless
+    (divergence-free) in the current-free region around the
+    sensors. ``S`` and ``M`` below are the per-channel coefficients of ``B0`` and ``G``;
+    ``M`` still needs the (center-dependent) ``rc`` offset removed at fit time.
+    """
+    rmags, cosmags, ws, bins = coils
+    n_coils = bins[-1] + 1
+    S = np.stack(
+        [np.bincount(bins, ws * cosmags[:, ii], n_coils) for ii in range(3)], axis=-1
+    )
+    M = np.stack(
+        [
+            [
+                np.bincount(bins, ws * cosmags[:, ii] * rmags[:, jj], n_coils)
+                for jj in range(3)
+            ]
+            for ii in range(3)
+        ]
+    )
+    # Channel centers, used both to choose the expansion center and to weight channels
+    # by their distance from it. Gradiometer weights sum to zero, so use |w|.
+    abs_ws = np.abs(ws)
+    norm = np.bincount(bins, abs_ws, n_coils)[:, np.newaxis]
+    centers = (
+        np.stack(
+            [np.bincount(bins, abs_ws * rmags[:, ii], n_coils) for ii in range(3)],
+            axis=-1,
+        )
+        / norm
+    )
+    return dict(S=S, M=M, centers=centers, scales=scales, radius=radius)
+
+
+def _nara_dipole_position(B_orig, coils, nara):
+    """Localize a magnetic dipole in closed form from the local field and its gradient.
+
+    A dipole field is a homogeneous function of degree -3 of the vector ``r`` from the
+    dipole to the observation point, so Euler's homogeneous function theorem gives
+    ``(r @ grad) B = -3 B``, i.e. ``G r = -3 B`` for the gradient tensor
+    ``G[i, j] = dB[i]/dx[j]``. Inverting that 3x3 system yields the position directly,
+    with no iteration and no starting guess. Because MEG sensors sample the field over
+    an extended array rather than at a point, ``B`` and ``G`` are first estimated by
+    least squares from the channels near the strongest response, where the first-order
+    expansion is a reasonable local model.
+
+    This is the formulation of :footcite:`NaraEtAl2006`, whose sensor unit measures
+    ``B`` and ``G`` directly; here the same relation is applied to a fitted local
+    expansion instead. Returns ``None`` if the local system is too poorly conditioned
+    to trust.
+    """
+    scales = nara["scales"]
+    centers = nara["centers"]
+    b = B_orig * scales
+    rc = centers[np.argmax(np.abs(b))]
+    # weight channels by noise level and by locality (the first-order expansion is only
+    # valid near rc), then solve the 8-parameter linear system
+    dist = np.linalg.norm(centers - rc, axis=1)
+    weights = scales * np.exp(-0.5 * (dist / nara["radius"]) ** 2)
+    use = weights > 1e-3 * weights.max()
+    if use.sum() < 12:  # need >8 equations with some margin
+        return None
+    # M is d(measurement)/d(G) about the origin; shift to an expansion about rc
+    M = nara["M"] - nara["S"].T[:, np.newaxis] * rc[np.newaxis, :, np.newaxis]
+    design = np.stack(
+        list(nara["S"].T)
+        + [
+            M[ii, jj] + M[jj, ii] if ii != jj else M[ii, ii] - M[2, 2]
+            for ii, jj in _GRAD_TENSOR_IDX
+        ],
+        axis=-1,
+    )
+    design = design[use] * weights[use, np.newaxis]
+    rhs = B_orig[use] * weights[use]
+    coef, _, rank, _ = np.linalg.lstsq(design, rhs, rcond=None)
+    if rank < 8:
+        return None
+    B0, g = coef[:3], coef[3:]
+    G = np.empty((3, 3))
+    for val, (ii, jj) in zip(g, _GRAD_TENSOR_IDX):
+        G[ii, jj] = G[jj, ii] = val
+    G[2, 2] = -(G[0, 0] + G[1, 1])
+    # G @ r = -3 * B0 with r pointing from the dipole to rc, so rr = rc + 3 * G^-1 @ B0
+    u, s, vt = np.linalg.svd(G)
+    if s[-1] <= 1e-6 * s[0]:
+        return None
+    return rc + 3 * (vt.T @ ((u.T @ B0) / s))
+
+
+def _magnetic_dipole_resid_jac(x, B, coils, whitener, too_close):
+    """Variable-projection residual and its Jacobian for a magnetic dipole.
+
+    The moment is eliminated analytically (it enters the model linearly), so only the
+    3 position parameters are optimized, exactly as in the COBYLA objective above.
+    The residual is ``(I - P(x)) B`` for ``P`` the orthogonal projector onto the span
+    of the whitened forward, and its derivative is the Golub-Pereyra formula
+    ``-[(I - P) A'_k Q + (A^+)^T A'_k^T r]`` with ``Q`` the fitted moment.
+    """
+    fwd = _magnetic_dipole_field_vec(x[np.newaxis], coils, too_close)
+    A = (fwd @ whitener.T).T  # (n_whitened, 3)
+    A_pinv = np.linalg.pinv(A)
+    Q = A_pinv @ B  # the linearly-eliminated moment
+    resid = B - A @ Q
+    grad = _magnetic_dipole_field_vec_grad(x, coils)  # (3, 3, n_coils)
+    jac = np.empty((len(B), 3))
+    for kk in range(3):
+        dA = (grad[:, kk] @ whitener.T).T  # d(A)/d(x[kk])
+        term = dA @ Q
+        term -= A @ (A_pinv @ term)  # (I - P) A'_k Q
+        term += A_pinv.T @ (dA.T @ resid)
+        jac[:, kk] = -term
+    return resid, jac
+
+
+def _magnetic_dipole_resid(x, *args):
+    return _magnetic_dipole_resid_jac(x, *args)[0]
+
+
+def _magnetic_dipole_jac(x, *args):
+    return _magnetic_dipole_resid_jac(x, *args)[1]
+
+
+def _fit_magnetic_dipole(B_orig, x0, too_close, whitener, coils, guesses, method=None):
     """Fit a single bit of data (x0 = pos)."""
+    method = _FIT_METHOD if method is None else method
     B = whitener @ B_orig
     B2 = B @ B
     objective = partial(
@@ -565,11 +704,29 @@ def _fit_magnetic_dipole(B_orig, x0, too_close, whitener, coils, guesses):
         idx = np.argmin(res)
         if res[idx] < res0:
             x0 = guesses["rr"][idx]
-    # x0 is the previous time point's coil position (or a better guess-grid point), so a
-    # rhobeg (initial trust-region radius) of 1 mm covers typical between-window motion.
-    # rhoend (final radius) sets the position resolution; 10 um is finer than cHPI
-    # accuracy but still converges in a few dozen evaluations
-    x = fmin_cobyla(objective, x0, (), rhobeg=1e-3, rhoend=1e-5, disp=False)
+    if method == "nara":
+        x_nara = _nara_dipole_position(B_orig, coils, guesses["nara"])
+        if x_nara is not None and objective(x_nara) < objective(x0):
+            x0 = x_nara
+        method = "lm"
+    if method == "cobyla":
+        # x0 is the previous time point's coil position (or a better guess-grid
+        # point), so a rhobeg (initial trust-region radius) of 1 mm covers typical
+        # between-window motion. rhoend (final radius) sets the position resolution;
+        # 10 um is finer than cHPI accuracy but still converges in a few dozen evals
+        x = fmin_cobyla(objective, x0, (), rhobeg=1e-3, rhoend=1e-5, disp=False)
+    else:
+        assert method == "lm", method
+        # Gauss-Newton on the variable-projection residual with an analytic Jacobian.
+        # xtol of 1 um is finer than cHPI accuracy; gtol/ftol keep their defaults.
+        x = least_squares(
+            _magnetic_dipole_resid,
+            x0,
+            jac=_magnetic_dipole_jac,
+            method="lm",
+            xtol=1e-6,
+            args=(B, coils, whitener, too_close),
+        ).x
     gof, moment = objective(x, return_moment=True)
     gof = 1.0 - gof / B2
     return x, gof, moment
@@ -1456,6 +1613,8 @@ def compute_chpi_locs(
     fwd = _reshape_view(fwd, (guesses.shape[0], 3, -1))
     fwd = np.linalg.svd(fwd, full_matrices=False)[2]
     guesses = dict(rr=guesses, whitened_fwd_svd=fwd)
+    # Per-channel noise scaling and a locality radius for the closed-form initializer
+    guesses["nara"] = _prep_nara(meg_coils, 1.0 / np.sqrt(cov["data"]), _NARA_RADIUS)
     del fwd, R
 
     iter_ = list(zip(sin_fits["times"], sin_fits["slopes"]))
