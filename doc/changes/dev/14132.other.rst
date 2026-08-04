@@ -1,0 +1,1 @@
+Speed up cHPI coil localization in :func:`mne.chpi.compute_chpi_locs` by replacing the derivative-free COBYLA search with a Levenberg-Marquardt fit that uses an analytic Jacobian of the magnetic dipole forward, by `Eric Larson`_.

@@ -32,7 +32,10 @@ from mne.channels import make_standard_montage
 from mne.datasets import testing
 from mne.dipole import Dipole, fit_dipole
 from mne.forward import Forward, _do_forward_solution, use_coil_def
-from mne.forward._compute_forward import _magnetic_dipole_field_vec
+from mne.forward._compute_forward import (
+    _magnetic_dipole_field_vec,
+    _magnetic_dipole_field_vec_grad,
+)
 from mne.forward._make_forward import (
     _create_meg_coils,
     _ForwardModeler,
@@ -213,6 +216,19 @@ def test_magnetic_dipole():
     with np.errstate(invalid="ignore"):
         fwd = _magnetic_dipole_field_vec(r0, coils[:1], too_close="info")
     assert not np.isfinite(fwd).any()
+    # analytic position derivative (used by cHPI fitting) vs finite differences
+    rng = np.random.default_rng(0)
+    for _ in range(3):
+        rr = np.array([0.0, 0.0, 0.05]) + rng.normal(0, 0.02, 3)
+        got = _magnetic_dipole_field_vec_grad(rr, coils)
+        want = np.empty_like(got)
+        for kk in range(3):
+            delta = np.eye(3)[kk] * 1e-7
+            want[:, kk] = (
+                _magnetic_dipole_field_vec((rr + delta)[np.newaxis], coils)
+                - _magnetic_dipole_field_vec((rr - delta)[np.newaxis], coils)
+            ) / 2e-7
+        assert_allclose(got, want, atol=1e-6 * np.abs(want).max())
 
 
 @pytest.mark.slowtest  # slow-ish on Travis OSX
