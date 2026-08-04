@@ -522,6 +522,11 @@ def _magnetic_dipole_objective(
 ):
     """Project data onto right eigenvectors of whitened forward."""
     fwd = _magnetic_dipole_field_vec(x[np.newaxis], coils, too_close)
+    if not np.isfinite(fwd).all():
+        # too_close != "raise" and we landed inside a coil. Feeding non-finite values
+        # to the jitted SVD below aborts the interpreter, so report the worst possible
+        # residual (i.e., a GOF of zero) and a null moment instead.
+        return (B2, np.zeros(3)) if return_moment else B2
     out, u, s, one = _magnetic_dipole_delta(fwd, whitener, B, B2)
     if return_moment:
         one /= s

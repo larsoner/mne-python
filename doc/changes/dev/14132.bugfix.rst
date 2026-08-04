@@ -1,0 +1,1 @@
+Fix bug where :func:`mne.chpi.compute_chpi_locs` with ``too_close="warning"`` or ``too_close="info"`` could abort the interpreter when a coil fit landed on a sensor, by `Eric Larson`_.

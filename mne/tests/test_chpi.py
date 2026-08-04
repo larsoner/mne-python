@@ -16,6 +16,7 @@ from mne.chpi import (
     _chpi_locs_to_times_dig,
     _compute_good_distances,
     _fit_chpi_quat,
+    _fit_magnetic_dipole,
     _get_hpi_initial_fit,
     _setup_ext_proj,
     compute_chpi_amplitudes,
@@ -32,7 +33,9 @@ from mne.chpi import (
     refit_hpi,
     write_head_pos,
 )
+from mne.cov import compute_whitener, make_ad_hoc_cov
 from mne.datasets import testing
+from mne.forward import _concatenate_coils, _create_meg_coils
 from mne.forward._compute_forward import _MAG_FACTOR
 from mne.io import (
     RawArray,
@@ -266,6 +269,29 @@ def _assert_quats(
     # velocity calculation difference
     vel_est_interp = interp1d(t_est, vels_est)(t)
     assert_allclose(vel_est_interp, vels, atol=vel_atol, err_msg="velocity")
+
+
+def test_fit_magnetic_dipole_too_close():
+    """Test that a fit landing on a sensor degrades gracefully."""
+    info = read_info(raw_fname)
+    info = pick_info(info, pick_types(info, meg=True, exclude=())[:12])
+    coils = _concatenate_coils(_create_meg_coils(info["chs"], "accurate"))
+    whitener, _ = compute_whitener(
+        make_ad_hoc_cov(info, verbose="error"), info, verbose="error"
+    )
+    B = np.full(len(info["ch_names"]), 1e-13)
+    x0 = coils[0][0].copy()  # exactly on a coil integration point
+    # the forward is non-finite here, which used to abort the interpreter in the
+    # jitted SVD; with too_close != "raise" it should just yield a zero GOF
+    for too_close in ("warning", "info"):
+        with _record_warnings(), np.errstate(invalid="ignore", divide="ignore"):
+            rr, gof, moment = _fit_magnetic_dipole(
+                B, x0, too_close, whitener, coils, None
+            )
+        assert np.isfinite(rr).all() and np.isfinite(moment).all()
+        assert gof == 0.0
+    with pytest.raises(RuntimeError, match="Coil too close"):
+        _fit_magnetic_dipole(B, x0, "raise", whitener, coils, None)
 
 
 def _decimate_chpi(raw, decim=4):
