@@ -2,6 +2,7 @@ __all__ = [
     "EOGRegression",
     "ICA",
     "Xdawn",
+    "amm_filter",
     "annotate_amplitude",
     "annotate_break",
     "annotate_movement",
@@ -49,6 +50,7 @@ __all__ = [
     "remove_fmri_gradient_artifact",
 ]
 from . import eyetracking, ieeg, nirs
+from ._amm import amm_filter
 from ._annotate_amplitude import annotate_amplitude
 from ._annotate_nan import annotate_nan
 from ._csd import compute_bridged_electrodes, compute_current_source_density

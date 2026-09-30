@@ -113,7 +113,37 @@ mne.viz.plot_dipole_locations(dipoles=dip, mode="arrow", color=(0.2, 1.0, 0.5), 
 mne.viz.set_3d_view(figure=fig, azimuth=30, elevation=70, distance=0.4)
 
 # %%
+# Instead of HFC, we can use the adaptive multipole model (AMM)
+# :footcite:`TierneyEtAl2024`, which additionally models the (here, phantom) brain
+# signals using spheroidal harmonics and removes temporally correlated interference
+# similar to tSSS. These data have no head digitization, so we fit the reference
+# spheroid to the sensor positions. Let's compare pre-stimulus noise levels and dipole
+# localization errors. Note that the phantom signal is perfectly repeatable, so the
+# temporal step (as with tSSS) also removes some of it along with the noise; with
+# ``st_duration=None`` the noise stays near the HFC level, but localization is slightly
+# better.
+
+raw_amm = mne.preprocessing.amm_filter(raw, spheroid="meg")  # replaces the HFC projs
+epochs = mne.Epochs(raw_amm, events, tmin=-0.1, tmax=0.25, decim=5, preload=True)
+rank = mne.compute_rank(epochs, tol=1e-3, tol_kind="relative")
+cov_amm = mne.compute_covariance(epochs, tmax=-0.01, rank=rank, method="shrunk")
+data = [
+    epochs[str(ii)][1:-1].average().crop(t_peak, t_peak).data[:, 0]
+    for ii in range(1, 33)
+]
+evoked = mne.EvokedArray(np.array(data).T, epochs.info, tmin=0.0)
+dip_amm = mne.fit_dipole(evoked, cov_amm, sphere, n_jobs=None)[0]
+for kind, this_dip, this_cov in (("HFC", dip, cov), ("AMM", dip_amm, cov_amm)):
+    noise = 1e15 * np.sqrt(np.mean(np.diag(this_cov.data)))
+    error = 1000 * np.median(np.linalg.norm(this_dip.pos - actual_pos, axis=1))
+    print(f"{kind}: noise {noise:0.1f} fT, median localization error {error:0.1f} mm")
+
+# %%
 # For more information on OPM data visualization, see the OPM preprocessing
 # tutorial:
 #
 # - :ref:`tut-opm-processing`
+#
+# References
+# ----------
+# .. footbibliography::

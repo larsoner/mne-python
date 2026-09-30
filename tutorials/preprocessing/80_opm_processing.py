@@ -135,6 +135,7 @@ psd_post_reg = raw.compute_psd(**psd_kwargs)
 # other. Which in a well-designed rigid helmet is the case.
 
 
+raw_reg = raw.copy()  # keep a copy for the adaptive multipole model below
 # include gradients by setting order to 2, set to 1 for homogeneous components
 projs = mne.preprocessing.compute_proj_hfc(raw.info, order=2)
 raw.add_proj(projs).apply_proj(verbose="error")
@@ -150,6 +151,19 @@ ax.set(title="After HFC", **set_kwargs)
 
 # compute the psd of the regressed data
 psd_post_hfc = raw.compute_psd(**psd_kwargs)
+
+# %%
+# Denoising: Adaptive multipole models
+# ------------------------------------
+#
+# The adaptive multipole model (AMM) :footcite:`TierneyEtAl2024` extends HFC by also
+# modeling the brain signals, using spheroidal harmonics fit to the sensor array (there
+# are no head digitization points here). We use a lower internal order than the default
+# because there are only 85 good channels.
+
+raw_amm = mne.preprocessing.amm_filter(raw_reg, int_order=7, spheroid="meg")
+psd_post_amm = raw_amm.compute_psd(**psd_kwargs)
+del raw_reg, raw_amm  # save memory
 
 # %%
 # Comparing denoising methods
@@ -169,6 +183,7 @@ psd_post_hfc = raw.compute_psd(**psd_kwargs)
 #
 # HFC improves on the low frequency shielding (up to 32 dB). Also this method
 # is not frequency-specific so we observe broadband interference reduction.
+# AMM performs similarly to HFC on these data.
 
 shielding = 10 * np.log10(psd_pre[:] / psd_post_reg[:])
 
@@ -184,18 +199,18 @@ ax.set(
 )
 
 
-shielding = 10 * np.log10(psd_pre[:] / psd_post_hfc[:])
-
-fig, ax = plt.subplots(layout="constrained")
-ax.plot(psd_post_hfc.freqs, shielding.T, **plot_kwargs)
-ax.grid(True, ls=":")
-ax.set(xticks=psd_post_hfc.freqs)
-ax.set(
-    xlim=(0, 20),
-    title="Reference regression & HFC shielding",
-    xlabel="Frequency (Hz)",
-    ylabel="Shielding (dB)",
-)
+for kind, psd_post in (("HFC", psd_post_hfc), ("AMM", psd_post_amm)):
+    shielding = 10 * np.log10(psd_pre[:] / psd_post[:])
+    fig, ax = plt.subplots(layout="constrained")
+    ax.plot(psd_post.freqs, shielding.T, **plot_kwargs)
+    ax.grid(True, ls=":")
+    ax.set(xticks=psd_post.freqs)
+    ax.set(
+        xlim=(0, 20),
+        title=f"Reference regression & {kind} shielding",
+        xlabel="Frequency (Hz)",
+        ylabel="Shielding (dB)",
+    )
 
 # %%
 # Filtering nuisance signals
@@ -235,7 +250,7 @@ ax.set(title="After regression, HFC and filtering", **set_kwargs)
 # With the data preprocessed, it is now possible to see an auditory evoked
 # response at the sensor level.
 
-# sphinx_gallery_thumbnail_number = 7
+# sphinx_gallery_thumbnail_number = 8
 
 events = mne.find_events(raw, min_duration=0.1)
 epochs = mne.Epochs(
