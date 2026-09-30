@@ -1186,6 +1186,35 @@ def _fit_sphere(points):
     return radius, origin
 
 
+def _fit_spheroid(points):
+    """Fit a prolate spheroid to an arbitrary set of points."""
+    from scipy.optimize import least_squares
+
+    # Start from the best-fit sphere with the major axis along the principal axis
+    radius, center = _fit_sphere(points)
+    axis = np.linalg.svd(points - points.mean(axis=0), full_matrices=False)[2][0]
+    # parameters: center (3), unnormalized axis (3), semi-minor b, a - b
+    x0 = np.concatenate([center, axis, [radius, 0.1 * radius]])
+    lower = np.r_[np.full(6, -np.inf), 0.0, 0.0]
+    x = least_squares(_spheroid_resid, x0, bounds=(lower, np.inf), args=(points,)).x
+    center, axis, b, a = x[:3], x[3:6] / np.linalg.norm(x[3:6]), x[6], x[6] + x[7]
+    logger.info(
+        f"    Fitted spheroid: semi-axes a={1000 * a:0.1f} b={1000 * b:0.1f} mm, "
+        f"center {', '.join(f'{1000 * v:0.1f}' for v in center)} mm, "
+        f"major axis ({', '.join(f'{v:0.2f}' for v in axis)})"
+    )
+    return center, axis, a, b
+
+
+def _spheroid_resid(x, points):
+    """Compute approximate distances from points to a prolate spheroid."""
+    diff = points - x[:3]
+    z = diff @ (x[3:6] / np.linalg.norm(x[3:6]))
+    rho2 = np.sum(diff * diff, axis=1) - z * z
+    b, a = x[6], x[6] + x[7]
+    return b * (np.sqrt(z * z / (a * a) + rho2 / (b * b)) - 1.0)
+
+
 def _check_origin(origin, info, coord_frame="head", disp=False):
     """Check or auto-determine the origin."""
     if isinstance(origin, str):

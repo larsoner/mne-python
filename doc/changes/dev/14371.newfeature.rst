@@ -1,0 +1,1 @@
+Add :func:`mne.preprocessing.amm_filter` implementing the adaptive multipole model (AMM) for denoising OPM data, by `Eric Larson`_.

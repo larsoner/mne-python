@@ -1273,10 +1273,16 @@ def _check_destination(destination, info, coord_frame):
 
 
 @_verbose_control
-def _prep_mf_coils(info, ignore_ref=True, *, accuracy="accurate", verbose=None):
+def _prep_mf_coils(
+    info, ignore_ref=True, *, accuracy="accurate", head_frame=False, verbose=None
+):
     """Get all coil integration information loaded and sorted."""
     meg_sensors = _prep_meg_channels(
-        info, head_frame=False, ignore_ref=ignore_ref, accuracy=accuracy, verbose=False
+        info,
+        head_frame=head_frame,
+        ignore_ref=ignore_ref,
+        accuracy=accuracy,
+        verbose=False,
     )
     coils = meg_sensors["defs"]
     mag_mask = _get_mag_mask(coils)
@@ -1922,11 +1928,11 @@ def _sss_basis(exp, all_coils):
 
     # do the heavy lifting
     max_order = max(int_order, ext_order)
-    L = _tabular_legendre(rmags, max_order + 1)  # +1 for the P/sin(theta) recurrence
     phi = np.arctan2(rmags[:, 1], rmags[:, 0])
     r_n = np.sqrt(np.sum(rmags * rmags, axis=1))
     r_xy = np.sqrt(rmags[:, 0] * rmags[:, 0] + rmags[:, 1] * rmags[:, 1])
     cos_pol = rmags[:, 2] / r_n  # cos(theta); theta 0...pi
+    L = _tabular_legendre(cos_pol, max_order + 1)  # +1 for P/sin(theta) recurrence
     sin_pol = np.sqrt(1.0 - cos_pol * cos_pol)  # sin(theta)
     # On the z-axis phi is undefined, but the field is the same for any choice,
     # so use phi=0 (the terms below are all finite there)
@@ -1989,16 +1995,7 @@ def _sss_basis(exp, all_coils):
             # S_in @ pinv(S_tot); it only matters where column norms do, i.e.
             # when regularizing (see _regularize_in).
             factor = mult * np.sqrt(2)
-            # dP/dtheta and P/sin(theta) via recurrences, the latter so that the
-            # azimuthal term is finite on the z-axis (nonzero there for order=1)
-            dP = (
-                L[degree][order + 1]
-                - (degree + order) * (degree - order + 1) * L[degree][order - 1]
-            )
-            P_sin = -(
-                L[degree + 1][order + 1]
-                + (degree - order + 1) * (degree - order + 2) * L[degree + 1][order - 1]
-            ) / (2 * order)
+            dP, P_sin = _legendre_theta_terms(L, degree, order)
 
             # Real
             idx = _deg_ord_idx(degree, order)
@@ -2009,13 +2006,13 @@ def _sss_basis(exp, all_coils):
             if degree <= int_order:
                 b_r = (degree + 1) * r_fact / r_nn2
                 b_az = az_fact / r_nn2
-                b_pol = pol_fact / (2 * r_nn2)
+                b_pol = pol_fact / r_nn2
                 S_in[:, idx] = _integrate_points(b_r, b_az, b_pol, projs, starts)
             # beta
             if degree <= ext_order:
                 b_r = -degree * r_fact * r_nn1
                 b_az = az_fact * r_nn1
-                b_pol = pol_fact * r_nn1 / 2.0
+                b_pol = pol_fact * r_nn1
                 S_out[:, idx] = _integrate_points(b_r, b_az, b_pol, projs, starts)
 
             # Imaginary
@@ -2027,13 +2024,13 @@ def _sss_basis(exp, all_coils):
             if degree <= int_order:
                 b_r = -(degree + 1) * r_fact / r_nn2
                 b_az = az_fact / r_nn2
-                b_pol = pol_fact / (2 * r_nn2)
+                b_pol = pol_fact / r_nn2
                 S_in[:, idx] = _integrate_points(b_r, b_az, b_pol, projs, starts)
             # beta
             if degree <= ext_order:
                 b_r = degree * r_fact * r_nn1
                 b_az = az_fact * r_nn1
-                b_pol = pol_fact * r_nn1 / 2.0
+                b_pol = pol_fact * r_nn1
                 S_out[:, idx] = _integrate_points(b_r, b_az, b_pol, projs, starts)
     return S_tot
 
@@ -2044,13 +2041,31 @@ def _integrate_points(b_r, b_az, b_pol, projs, starts):
     return np.add.reduceat(grads, starts)
 
 
-def _tabular_legendre(r, nind):
-    """Compute associated Legendre polynomials."""
-    r_n = np.sqrt(np.sum(r * r, axis=1))
-    x = r[:, 2] / r_n  # cos(theta)
+def _legendre_theta_terms(L, degree, order):
+    """Get dP/dtheta and P/sin(theta) for P_degree^order(cos(theta)).
+
+    Both come from recurrences on the tabulated (Condon-Shortley phase) functions
+    ``L`` (which must go up to ``degree + 1``) so that they are finite on the
+    z-axis, where P/sin(theta) is nonzero for ``order == 1``.
+    """
+    if order == 0:
+        return L[degree][1], 0.0
+    dP = (
+        L[degree][order + 1]
+        - (degree + order) * (degree - order + 1) * L[degree][order - 1]
+    ) / 2
+    P_sin = -(
+        L[degree + 1][order + 1]
+        + (degree - order + 1) * (degree - order + 2) * L[degree + 1][order - 1]
+    ) / (2 * order)
+    return dP, P_sin
+
+
+def _tabular_legendre(x, nind):
+    """Compute associated Legendre polynomials of x = cos(theta)."""
     L = list()
     for degree in range(nind + 1):
-        L.append(np.zeros((degree + 2, len(r))))
+        L.append(np.zeros((degree + 2, len(x))))
     L[0][0] = 1.0
     pnn = np.ones(x.shape)
     fact = 1.0

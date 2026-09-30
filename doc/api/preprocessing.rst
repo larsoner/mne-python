@@ -80,6 +80,7 @@ Projections:
    ICA
    Xdawn
    EOGRegression
+   amm_filter
    annotate_amplitude
    annotate_break
    annotate_movement
